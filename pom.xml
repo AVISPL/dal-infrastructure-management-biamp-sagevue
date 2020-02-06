@@ -6,7 +6,7 @@
 
     <groupId>com.avispl.symphony.dal.device.biamp.sagevue</groupId>
     <artifactId>symphony-dal-communicator-biamp-sagevue</artifactId>
-    <version>0.1.28-SNAPSHOT</version>
+    <version>0.2.0-SNAPSHOT</version>
     <build>
         <plugins>
             <plugin>
@@ -71,12 +71,6 @@
                 </executions>
             </plugin>
         </plugins>
-        <resources>
-            <resource>
-                <directory>src/main/resources</directory>
-                <filtering>true</filtering>
-            </resource>
-        </resources>
     </build>
     <reporting>
         <plugins>

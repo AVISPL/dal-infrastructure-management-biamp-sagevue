@@ -19,13 +19,12 @@ public class SageVueCommunicator extends RestCommunicator implements Aggregator,
 
     private String loginId;
     private ObjectMapper objectMapper;
-    //final Properties properties = new Properties();
+    private Map<String, String> faultMessagingStatus = new HashMap<>();
 
-    public SageVueCommunicator() throws Exception {
+    public SageVueCommunicator() {
         super();
         setTrustAllCertificates(true);
         objectMapper = new ObjectMapper();
-        //properties.load(this.getClass().getResourceAsStream("version.properties"));
     }
 
     public String getLoginId() {
@@ -34,8 +33,6 @@ public class SageVueCommunicator extends RestCommunicator implements Aggregator,
 
     @Override
     public void controlProperty(ControllableProperty controllableProperty) throws Exception {
-        logger.debug("SageVue controllable property : " + controllableProperty.getProperty() + " | " + controllableProperty.getDeviceId() + " | " + controllableProperty.getValue());
-
         String property = controllableProperty.getProperty();
         //Object value = controllableProperty.getValue();
         String deviceId = controllableProperty.getDeviceId();
@@ -45,7 +42,7 @@ public class SageVueCommunicator extends RestCommunicator implements Aggregator,
                 rebootTesira(deviceId);
                 break;
             default:
-                logger.debug("Operation " + property + " is not supported yet. Skipping...");
+                logger.warn("Control operation " + property + " is not supported yet. Skipping.");
         }
     }
 
@@ -62,7 +59,7 @@ public class SageVueCommunicator extends RestCommunicator implements Aggregator,
 
     @Override
     public List<AggregatedDevice> retrieveMultipleStatistics() throws Exception {
-        logger.debug("SageVueCommunicator version : 0.1.25");
+        refreshFaultMessagingStatus();
         return fetchDevicesList();
     }
 
@@ -76,70 +73,26 @@ public class SageVueCommunicator extends RestCommunicator implements Aggregator,
 
     @Override
     protected void authenticate() throws Exception {
+        JsonNode authentication = objectMapper.readTree(doPost(BASE_URL+"login", buildAuthenticationPayload(), String.class));
+        loginId = authentication.get("LoginId").asText();
+    }
+
+    private Map<String, Map> buildAuthenticationPayload(){
         Map<String, Map> authenticationBody = new HashMap();
         Map<String, String> credentials = new HashMap();
         credentials.put("userName", this.getLogin());
         credentials.put("password", this.getPassword());
         credentials.put("rememberMe", "false");
         authenticationBody.put("credentials", credentials);
-
-        JsonNode authentication = objectMapper.readTree(doPost(BASE_URL+"login", authenticationBody, String.class));
-        loginId = authentication.get("LoginId").asText();
-    }
-
-//    @Override
-//    protected RestTemplate obtainRestTemplate() throws Exception {
-//        RestTemplate restTemplate = super.obtainRestTemplate();
-//        MappingJackson2HttpMessageConverter converter = new MappingJackson2HttpMessageConverter();
-//        converter.setSupportedMediaTypes(Arrays.asList(MediaType.TEXT_PLAIN, MediaType.APPLICATION_JSON, MediaType.TEXT_HTML));
-//        restTemplate.getMessageConverters().add(0, converter);
-//
-//        restTemplate.setErrorHandler(new ResponseErrorHandler() {
-//            @Override
-//            public boolean hasError(ClientHttpResponse clientHttpResponse) throws IOException {
-//                if(clientHttpResponse.getStatusCode() == HttpStatus.UNAUTHORIZED){
-//                    try {
-//                        authenticate();
-//                    } catch (Exception e) {
-//                        logger.error(e.getMessage());
-//                    }
-//                }
-//                return false;
-//            }
-//
-//            @Override
-//            public void handleError(ClientHttpResponse clientHttpResponse) throws IOException {
-//            }
-//        });
-//
-//        return restTemplate;
-//    }
-
-//    public JsonObject getSystems() throws Exception {
-//        logger.debug("SageVueCommunicator: getting list of systems");
-//        return doGet(BASE_URL + "systems", JsonObject.class);
-//    }
-
-    public JsonNode getDevices() throws Exception {
-        authenticate();
-        logger.debug("SageVueCommunicator: getting list of devices");
-        String devicesResponse = doGet(BASE_URL + "devices", String.class);
-        logger.debug("SageVueCommunicator: list of devices: " + devicesResponse);
-        return objectMapper.readTree(devicesResponse);
+        return authenticationBody;
     }
 
     private List<AggregatedDevice> fetchDevicesList() throws Exception {
         List<AggregatedDevice> aggregatedDevices = new ArrayList<>();
         JsonNode devices = getDevices();
-        if(logger.isInfoEnabled()) {
-            logger.info(devices);
-        }
-
-        logger.debug("SageVueCommunicator: devices list: " + devices);
 
         devices.fields().forEachRemaining(stringJsonNodeEntry -> {
             if(stringJsonNodeEntry.getKey().endsWith("Devices")){
-                logger.debug("SageVueCommunicator: creating device: " + stringJsonNodeEntry.getValue());
                 stringJsonNodeEntry.getValue().iterator().forEachRemaining(jsonNode -> {
                     aggregatedDevices.add(createAggregatedDevice(jsonNode));
                 });
@@ -167,19 +120,43 @@ public class SageVueCommunicator extends RestCommunicator implements Aggregator,
         extendedStatistics.put("Is Controlled", String.valueOf(isControlled));
         extendedStatistics.put("Firmware Version", deviceInfo.findPath("FirmwareVersion").asText());
         extendedStatistics.put("Is Protected", deviceInfo.findPath("IsProtected").asText());
+        extendedStatistics.putAll(faultMessagingStatus);
 
         aggregatedDevice.setStatistics(extendedStatistics);
 
         if(deviceInfo.findPath("Status").intValue() == 0) {
             aggregatedDevice.setDeviceOnline(true);
         }
+        aggregatedDevice.setTimestamp(System.currentTimeMillis());
 
         return aggregatedDevice;
     }
 
     private void rebootTesira(String deviceSerialNumber) throws Exception {
-        doPut(BASE_URL + "Devices" + deviceSerialNumber + "/Reboot", null, String.class);
+        doPut(BASE_URL + "Devices" + deviceSerialNumber + "/Reboot", buildAuthenticationPayload(), String.class);
     }
+
+    public JsonNode getDevices() throws Exception {
+        authenticate();
+        String devicesResponse = doGet(BASE_URL + "devices", String.class);
+        return objectMapper.readTree(devicesResponse);
+    }
+
+    public void refreshFaultMessagingStatus() throws Exception {
+        authenticate();
+        JsonNode faultMessagingResponse = objectMapper.readTree(doGet(BASE_URL + "FaultProfile/GetFaultMessaging", String.class));
+        faultMessagingResponse.fields().forEachRemaining(stringJsonNodeEntry -> {
+            faultMessagingStatus.put(stringJsonNodeEntry.getKey(), stringJsonNodeEntry.getValue().asText());
+        });
+    }
+
+//    private void disableFaultMessaging(){
+//        Map<String, String> notifications = new HashMap<>();
+//
+//        notifications.put("turnOffNotifications", "");
+//        notifications.put("turnOffEmails", "");
+//        notifications.put("turnOffSMS", "");
+//    }
 
     @Override
     protected HttpHeaders putExtraRequestHeaders(HttpMethod httpMethod, String uri, HttpHeaders headers) throws Exception {
