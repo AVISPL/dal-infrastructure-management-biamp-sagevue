@@ -6,7 +6,7 @@
         "url": "/biampsagevue/api/login",
         "bodyPatterns": [
           {
-            "equalToJson": "{\"credentials\":{\"userName\": \"Admin\", \"password\": \"1234\", \"rememberMe\": \"false\"}}"
+            "equalToJson": "{\"credentials\":{\"userName\": \"Admin\", \"password\": \"1234\"}}"
           }
         ]
       },
@@ -48,7 +48,7 @@
       },
       "response": {
         "status": 200,
-        "body": "{\"TesiraDevices\":[{\"Model\":\"FORTE_VT\",\"ModelDescription\":\"TesiraFORT\u00C9 AVB VT\",\"SystemDescription\":\"TesiraFORT\u00C9 AVB-VT - Default Configuration 03275657\",\"FirmwareVersion\":\"3.3.0.18\",\"OccupiedStatus\":\"\",\"AssetGroupId\":\"4a7a071b-7331-4849-b842-516bae6f395d\",\"IsControlled\":false,\"SystemId\":\"03275657\",\"SerialNumber\":\"03275657\",\"HostName\":\"TesiraForte03275657\",\"Description\":\"\",\"IsProtected\":false,\"Faults\":[],\"Status\":0,\"Labels\":[]}],\"TesiraErrors\":[],\"DevioDevices\":[],\"DevioErrors\":[],\"AtomDevices\":[],\"AtomErrors\":[],\"DynasoundDevices\":[],\"DynasoundErrors\":[],\"QtProDevices\":[],\"QtProErrors\":[]}",
+        "body": "{\"TesiraDevices\":[{\"Model\":\"FORTE_VT\",\"ModelDescription\":\"TesiraFORTÉ AVB VT\",\"SystemDescription\":\"TesiraFORTÉ AVB-VT - Default Configuration 03275657\",\"FirmwareVersion\":\"3.3.0.18\",\"OccupiedStatus\":\"\",\"AssetGroupId\":\"4a7a071b-7331-4849-b842-516bae6f395d\",\"IsControlled\":false,\"SystemId\":\"03275657\",\"SerialNumber\":\"03275657\",\"HostName\":\"TesiraForte03275657\",\"Description\":\"\",\"IsProtected\":false,\"Faults\":[],\"Status\":0,\"Labels\":[]}],\"TesiraErrors\":[],\"DevioDevices\":[],\"DevioErrors\":[],\"AtomDevices\":[],\"AtomErrors\":[],\"DynasoundDevices\":[],\"DynasoundErrors\":[],\"QtProDevices\":[],\"QtProErrors\":[]}",
         "headers": {
           "Content-Type": "text/plain"
         }

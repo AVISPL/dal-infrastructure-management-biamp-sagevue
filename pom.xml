@@ -6,7 +6,7 @@
 
     <groupId>com.avispl.symphony.dal.device.biamp.sagevue</groupId>
     <artifactId>symphony-dal-communicator-biamp-sagevue</artifactId>
-    <version>0.2.0-SNAPSHOT</version>
+    <version>0.2.16-SNAPSHOT</version>
     <build>
         <plugins>
             <plugin>
@@ -98,9 +98,9 @@
         <dependency>
             <groupId>com.avispl.symphony.dal</groupId>
             <artifactId>symphony-dal-commons</artifactId>
-            <version>4.7.0</version>
+            <version>4.9.0</version>
             <scope>system</scope>
-            <systemPath>${basedir}/lib/symphony-dal-commons-4.7.0.jar</systemPath>
+            <systemPath>${basedir}/lib/symphony-dal-commons-4.9.0.jar</systemPath>
         </dependency>
         <dependency>
             <groupId>com.avispl.symphony.api</groupId>
@@ -115,6 +115,11 @@
             <version>1018</version>
             <scope>system</scope>
             <systemPath>${basedir}/lib/icmp4j-1018.jar</systemPath>
+        </dependency>
+        <dependency>
+            <groupId>commons-beanutils</groupId>
+            <artifactId>commons-beanutils</artifactId>
+            <version>1.9.4</version>
         </dependency>
         <dependency>
             <groupId>org.apache.sshd</groupId>
@@ -145,6 +150,11 @@
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>
             <version>2.9.10.1</version>
+        </dependency>
+        <dependency>
+            <groupId>com.fasterxml.jackson.dataformat</groupId>
+            <artifactId>jackson-dataformat-yaml</artifactId>
+            <version>2.9.9</version>
         </dependency>
         <dependency>
             <groupId>org.snmp4j</groupId>

@@ -35,8 +35,8 @@ public class SageVueCommunicatorTest {
         sageVueCommunicator.setTrustAllCertificates(true);
         sageVueCommunicator.setProtocol("http");
         sageVueCommunicator.setContentType("application/json");
-        sageVueCommunicator.setPort(80);
-        sageVueCommunicator.setHost("172.31.254.17");
+        sageVueCommunicator.setPort(wireMockRule.port());
+        sageVueCommunicator.setHost("127.0.0.1");
         sageVueCommunicator.setAuthenticationScheme(HttpCommunicator.AuthenticationScheme.Basic);
         sageVueCommunicator.setLogin("Admin");
         sageVueCommunicator.setPassword("1234");
@@ -53,5 +53,6 @@ public class SageVueCommunicatorTest {
     public void getSystemsTest() throws Exception {
         List<AggregatedDevice> devices = sageVueCommunicator.retrieveMultipleStatistics();
         Assert.assertFalse(devices.isEmpty());
+        Assert.assertEquals("03275657", devices.get(0).getSerialNumber());
     }
 }

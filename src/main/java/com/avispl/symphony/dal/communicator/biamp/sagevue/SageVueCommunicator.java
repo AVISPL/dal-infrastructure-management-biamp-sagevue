@@ -4,6 +4,9 @@ import com.avispl.symphony.api.dal.control.Controller;
 import com.avispl.symphony.api.dal.dto.control.ControllableProperty;
 import com.avispl.symphony.api.dal.dto.monitor.aggregator.AggregatedDevice;
 import com.avispl.symphony.api.dal.monitor.aggregator.Aggregator;
+import com.avispl.symphony.dal.aggregator.parser.AggregatedDeviceProcessor;
+import com.avispl.symphony.dal.aggregator.parser.PropertiesMapping;
+import com.avispl.symphony.dal.aggregator.parser.PropertiesMappingParser;
 import com.avispl.symphony.dal.communicator.RestCommunicator;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -14,12 +17,16 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 import static com.avispl.symphony.dal.communicator.biamp.sagevue.Constants.*;
+import static java.util.Collections.emptyMap;
 
 public class SageVueCommunicator extends RestCommunicator implements Aggregator, Controller {
 
     private String loginId;
     private ObjectMapper objectMapper;
-    private Map<String, String> faultMessagingStatus = new HashMap<>();
+    private Map<String, String> faultMessagingStatus = emptyMap();
+    private AggregatedDeviceProcessor aggregatedDeviceProcessor;
+
+    private boolean deviceIsProtected = false;
 
     public SageVueCommunicator() {
         super();
@@ -32,13 +39,20 @@ public class SageVueCommunicator extends RestCommunicator implements Aggregator,
     }
 
     @Override
+    protected void internalInit() throws Exception {
+        super.internalInit();
+        Map<String, PropertiesMapping> mapping = new PropertiesMappingParser().loadYML("model-mapping.yml");
+        aggregatedDeviceProcessor = new AggregatedDeviceProcessor(mapping);
+    }
+
+    @Override
     public void controlProperty(ControllableProperty controllableProperty) throws Exception {
         String property = controllableProperty.getProperty();
-        //Object value = controllableProperty.getValue();
         String deviceId = controllableProperty.getDeviceId();
 
+        logger.debug("Control operation " + property + " Is called.");
         switch (property){
-            case "Reboot Tesira":
+            case "RebootTesira":
                 rebootTesira(deviceId);
                 break;
             default:
@@ -59,7 +73,6 @@ public class SageVueCommunicator extends RestCommunicator implements Aggregator,
 
     @Override
     public List<AggregatedDevice> retrieveMultipleStatistics() throws Exception {
-        refreshFaultMessagingStatus();
         return fetchDevicesList();
     }
 
@@ -73,67 +86,33 @@ public class SageVueCommunicator extends RestCommunicator implements Aggregator,
 
     @Override
     protected void authenticate() throws Exception {
-        JsonNode authentication = objectMapper.readTree(doPost(BASE_URL+"login", buildAuthenticationPayload(), String.class));
+        JsonNode authentication = objectMapper.readTree(doPost(BASE_URL+"login", buildAuthenticationPayload(true), String.class));
         loginId = authentication.get("LoginId").asText();
     }
 
-    private Map<String, Map> buildAuthenticationPayload(){
-        Map<String, Map> authenticationBody = new HashMap();
-        Map<String, String> credentials = new HashMap();
-        credentials.put("userName", this.getLogin());
-        credentials.put("password", this.getPassword());
-        credentials.put("rememberMe", "false");
+    private Map<String, Map<String, String>> buildAuthenticationPayload(boolean populateCredentials){
+        Map<String, Map<String, String>> authenticationBody = new HashMap<>();
+        Map<String, String> credentials = new HashMap<>();
+
+        if(populateCredentials){
+            credentials.put("userName", this.getLogin());
+            credentials.put("password", this.getPassword());
+        } else {
+            credentials.put("userName", "");
+            credentials.put("password", "");
+        }
         authenticationBody.put("credentials", credentials);
         return authenticationBody;
     }
 
     private List<AggregatedDevice> fetchDevicesList() throws Exception {
-        List<AggregatedDevice> aggregatedDevices = new ArrayList<>();
-        JsonNode devices = getDevices();
-
-        devices.fields().forEachRemaining(stringJsonNodeEntry -> {
-            if(stringJsonNodeEntry.getKey().endsWith("Devices")){
-                stringJsonNodeEntry.getValue().iterator().forEachRemaining(jsonNode -> {
-                    aggregatedDevices.add(createAggregatedDevice(jsonNode));
-                });
-            }
-        });
-        return aggregatedDevices;
-    }
-
-    private AggregatedDevice createAggregatedDevice(JsonNode deviceInfo){
-        AggregatedDevice aggregatedDevice = new AggregatedDevice();
-        aggregatedDevice.setDeviceId(deviceInfo.get(SYSTEM_ID).asText());
-        aggregatedDevice.setDeviceModel(String.format("%s %s", deviceInfo.get(MODEL).asText(), deviceInfo.get(MODEL_DESCRIPTION).asText()));
-        aggregatedDevice.setSerialNumber(deviceInfo.get(SERIAL_NUMBER).asText());
-
-        Map<String, String> extendedStatistics = new HashMap<>();
-
-        boolean isControlled = deviceInfo.findValue("IsControlled").booleanValue();
-        if(isControlled) {
-            Map<String, String> controls = new HashMap<>();
-            extendedStatistics.put("Reboot Tesira", "");
-            controls.put("Reboot Tesira", "Push");
-            aggregatedDevice.setControl(controls);
-        }
-
-        extendedStatistics.put("Is Controlled", String.valueOf(isControlled));
-        extendedStatistics.put("Firmware Version", deviceInfo.findPath("FirmwareVersion").asText());
-        extendedStatistics.put("Is Protected", deviceInfo.findPath("IsProtected").asText());
-        extendedStatistics.putAll(faultMessagingStatus);
-
-        aggregatedDevice.setStatistics(extendedStatistics);
-
-        if(deviceInfo.findPath("Status").intValue() == 0) {
-            aggregatedDevice.setDeviceOnline(true);
-        }
-        aggregatedDevice.setTimestamp(System.currentTimeMillis());
-
-        return aggregatedDevice;
+        return aggregatedDeviceProcessor.extractDevices(getDevices());
     }
 
     private void rebootTesira(String deviceSerialNumber) throws Exception {
-        doPut(BASE_URL + "Devices" + deviceSerialNumber + "/Reboot", buildAuthenticationPayload(), String.class);
+        logger.debug("Tesira Reboot is requested for " + deviceSerialNumber);
+        String response = doPut(BASE_URL + "Devices/" + deviceSerialNumber + "/Reboot", buildAuthenticationPayload(deviceIsProtected), String.class);
+        logger.debug("Tesira Reboot is resulted with response " + response);
     }
 
     public JsonNode getDevices() throws Exception {
@@ -150,18 +129,39 @@ public class SageVueCommunicator extends RestCommunicator implements Aggregator,
         });
     }
 
-//    private void disableFaultMessaging(){
-//        Map<String, String> notifications = new HashMap<>();
-//
-//        notifications.put("turnOffNotifications", "");
-//        notifications.put("turnOffEmails", "");
-//        notifications.put("turnOffSMS", "");
-//    }
-
     @Override
     protected HttpHeaders putExtraRequestHeaders(HttpMethod httpMethod, String uri, HttpHeaders headers) throws Exception {
         headers.set("Content-Type", "application/json");
         headers.set("SessionID", loginId);
         return headers;
     }
+
+    /**
+     * http://172.31.254.17/biampsagevue/api/devices/03275657/unprotect
+     * {
+     *     "password": {
+     *         "existingAdminPassword": "1234"
+     *     }
+     * }
+     *
+     * /api/System/Devices/Secure/{id}
+     */
+
+    /*
+    * /api/System/Devices/Secure/{id}
+    * */
+//    private boolean secureTesiraDevice(String deviceId) throws Exception {
+//        String response = doPost(BASE_URL + "System/Devices/Secure" + deviceId, buildAuthenticationPayload(), String.class);
+//        return objectMapper.readTree(response).findValue("IsControlled").booleanValue();
+//    }
+
+    /*
+    * /api/Devices/Security/Release
+    *
+    * Id -> param -> query string??
+    * */
+//    private boolean releaseTesiraDevice(String deviceId) throws Exception {
+//        String response = doGet(BASE_URL + "Devices/Security/Release?id=" + deviceId, String.class);
+//        return objectMapper.readTree(response).findValue("IsControlled").booleanValue();
+//    }
 }

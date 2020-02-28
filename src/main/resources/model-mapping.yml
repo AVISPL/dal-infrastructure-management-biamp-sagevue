@@ -1,0 +1,32 @@
+models:
+  - model:
+      name: generic
+      node: TesiraDevices
+      vendor: biamp
+      properties:
+        firmwareVersion: FirmwareVersion
+        isControlled: IsControlled
+        isProtected: IsProtected
+      mapping:
+        deviceModel: ModelDescription
+        deviceId: SystemId
+        deviceOnline: Status
+        serialNumber: SerialNumber
+  - model:
+      name: Tesira
+      vendor: biamp
+      filter: device.Model=='FORTE_VT'
+      properties:
+        RebootTesira: RebootTesira
+        firmwareVersion: device.FirmwareVersion
+        isControlled: device.IsControlled
+        isProtected: device.IsProtected
+      mapping:
+        deviceMake: Biamp
+        deviceName: TesiraFORTÉ
+        deviceModel: device.ModelDescription
+        deviceId: device.SystemId
+        deviceOnline: device.Status==0
+        serialNumber: device.SerialNumber
+      control:
+        RebootTesira: Push
