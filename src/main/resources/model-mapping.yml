@@ -4,7 +4,7 @@ models:
       node: TesiraDevices
       vendor: biamp
       properties:
-        firmwareVersion: FirmwareVersion
+        FirmwareVersion: FirmwareVersion
         isControlled: IsControlled
         isProtected: IsProtected
       mapping:
@@ -17,10 +17,13 @@ models:
       vendor: biamp
       filter: device.Model=='FORTE_VT'
       properties:
-        RebootTesira: RebootTesira
-        firmwareVersion: device.FirmwareVersion
+        Reboot: Reboot
+        FirmwareVersion: device.FirmwareVersion
+        AvailableFirmwareVersions: AvailableFirmwareVersions
+        FirmwareUpdate: FirmwareUpdate
         isControlled: device.IsControlled
         isProtected: device.IsProtected
+        ipAddress: device.IpAddress
       mapping:
         deviceMake: Biamp
         deviceName: TesiraFORTÉ
@@ -29,4 +32,9 @@ models:
         deviceOnline: device.Status==0
         serialNumber: device.SerialNumber
       control:
-        RebootTesira: Push
+        Reboot: Push
+        AvailableFirmwareVersions:
+          type: DropDown
+          options: device.AvailableFirmwareVersions
+          labels: device.AvailableFirmwareVersions
+        FirmwareUpdate: Push
