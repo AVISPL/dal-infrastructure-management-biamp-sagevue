@@ -24,6 +24,8 @@ models:
         isControlled: device.IsControlled
         isProtected: device.IsProtected
         ipAddress: device.IpAddress
+        occupiedStatus: device.OccupiedStatus || "None"
+        deviceFaults: "device.Faults.length == 0 ? \"None\" : device.Faults"
       mapping:
         deviceMake: Biamp
         deviceName: TesiraFORTÉ
@@ -32,9 +34,17 @@ models:
         deviceOnline: device.Status==0
         serialNumber: device.SerialNumber
       control:
-        Reboot: Push
+        Reboot:
+          type: Button
+          label: Reboot
+          labelPressed: Reboot
+          gracePeriod: 0
+        FirmwareUpdate:
+          type: Button
+          label: FirmwareUpdate
+          labelPressed: FirmwareUpdate
+          gracePeriod: 0
         AvailableFirmwareVersions:
           type: DropDown
           options: device.AvailableFirmwareVersions
           labels: device.AvailableFirmwareVersions
-        FirmwareUpdate: Push

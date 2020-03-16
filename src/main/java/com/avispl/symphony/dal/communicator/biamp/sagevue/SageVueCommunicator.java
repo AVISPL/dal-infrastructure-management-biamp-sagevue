@@ -29,8 +29,9 @@ public class SageVueCommunicator extends RestCommunicator implements Aggregator,
 
     private String loginId;
     private ObjectMapper objectMapper;
-    private Map<String, String> faultMessagingStatus = new HashMap<>();
+//    private Map<String, String> faultMessagingStatus = new HashMap<>();
     private List<String> protectedSystems = new ArrayList<>();
+    private List<String> protectedDevices = new ArrayList<>();
     private Map<String, String> baseControls = new HashMap<>();
     private Map<String, String> devicesFirmwareVersions = new HashMap<>();
     private Map<String, String> deviceModels = new HashMap<>();
@@ -58,18 +59,12 @@ public class SageVueCommunicator extends RestCommunicator implements Aggregator,
 
     @Override
     public void controlProperty(ControllableProperty controllableProperty) throws Exception {
-        logger.debug("SageVue control action requested: ____");
         String property = controllableProperty.getProperty();
-        logger.debug("SageVue control action requested: " + property);
         String deviceId = controllableProperty.getDeviceId();
-        logger.debug("SageVue control action requested: " + property + " " + deviceId);
         String value = String.valueOf(controllableProperty.getValue());
-
         String modelName = deviceModels.get(deviceId);
 
-        logger.debug("SageVue control action requested for device id: " + deviceId + " and model " + modelName + " and control: " + property);
-
-        if(property.contains("Protect")) {
+        if(property.startsWith("Protect System")) {
             String systemId = property.replaceAll("[^\\d.]", "");
             switch (value) {
                 case "1":
@@ -91,14 +86,11 @@ public class SageVueCommunicator extends RestCommunicator implements Aggregator,
                 case "FirmwareUpdate":
                     String newFirmwareVersion = devicesFirmwareVersions.get(deviceId);
                     if(StringUtils.isEmpty(newFirmwareVersion)){
-                        logger.debug("Tesira firmware update: new firmware version is empty, skipping");
                         return;
                     }
-                    logger.debug("Tesira firmware update: requested with " + deviceId + " and " + newFirmwareVersion);
                     requestFirmwareUpdate(deviceId, newFirmwareVersion, modelName);
                     break;
-                case "FirmwareVersion":
-                    logger.debug("Tesira firmware new version set: " + value + " device id: " + deviceId);
+                case "AvailableFirmwareVersions":
                     devicesFirmwareVersions.put(deviceId, value);
                     break;
                 default:
@@ -106,23 +98,6 @@ public class SageVueCommunicator extends RestCommunicator implements Aggregator,
                     break;
             }
         }
-//
-//        if(property.equals("Reboot")) {
-//            reboot(deviceId, modelName);
-//        } else if (property.equals("FirmwareVersion")) {
-//            logger.debug("Tesira firmware new version set: " + value + " device id: " + deviceId);
-//            devicesFirmwareVersions.put(deviceId, value);
-//        } else if (property.equals("FirmwareUpdate")) {
-//            String newFirmwareVersion = devicesFirmwareVersions.get(deviceId);
-//            if(StringUtils.isEmpty(newFirmwareVersion)){
-//                logger.debug("Tesira firmware update: new firmware version is empty, skipping");
-//                return;
-//            }
-//            logger.debug("Tesira firmware update: requested with " + deviceId + " and " + newFirmwareVersion);
-//            requestFirmwareUpdate(deviceId, newFirmwareVersion, modelName);
-//        } else {
-//            logger.warn("Control operation " + property + " is not supported yet. Skipping.");
-//        }
     }
 
     @Override
@@ -137,7 +112,6 @@ public class SageVueCommunicator extends RestCommunicator implements Aggregator,
 
     @Override
     public List<AggregatedDevice> retrieveMultipleStatistics() throws Exception {
-        deviceModels.clear();
         return fetchDevicesList();
     }
 
@@ -159,14 +133,13 @@ public class SageVueCommunicator extends RestCommunicator implements Aggregator,
         protectedSystems.clear();
         systems.forEach(jsonNode -> {
             String systemId = jsonNode.get("SystemId").asText();
-            String hostName = jsonNode.get("HostName").asText();
             boolean isProtected = jsonNode.get("IsProtected").asBoolean();
 
             if(baseControls.isEmpty()){
-                baseControls.put("Protect" + hostName, String.valueOf(isProtected));
+                baseControls.put("Protect System " + systemId, String.valueOf(isProtected));
             }
             multipleStatistics.putAll(baseControls);
-            controls.put("Protect" + hostName, "Toggle");
+            controls.put("Protect System " + systemId, "Toggle");
             if(isProtected){
                 protectedSystems.add(systemId);
             }
@@ -221,11 +194,12 @@ public class SageVueCommunicator extends RestCommunicator implements Aggregator,
     private Map<String, Object> buildFirmwareUpdateRequest(String deviceSerialNumber, String firmwareVersion) {
         Map<String, Object> firmwareUpdatePayload = new HashMap<>();
         Map<String, Object> devices = new HashMap<>();
-
         Map<String, String> deviceUpdatePayload = new HashMap<>();
+
+        boolean deviceIsProtected = protectedDevices.contains(deviceSerialNumber);
         deviceUpdatePayload.put("deviceSerialNumber", deviceSerialNumber);
-        deviceUpdatePayload.put("userName", this.getLogin());
-        deviceUpdatePayload.put("password", this.getPassword());
+        deviceUpdatePayload.put("userName", deviceIsProtected ? this.getLogin() : "");
+        deviceUpdatePayload.put("password", deviceIsProtected ? this.getPassword() : "");
 
         devices.put("devices", Collections.singletonList(deviceUpdatePayload));
         devices.put("firmwareVersion", firmwareVersion);
@@ -236,7 +210,17 @@ public class SageVueCommunicator extends RestCommunicator implements Aggregator,
     }
 
     private List<AggregatedDevice> fetchDevicesList() throws Exception {
-        return aggregatedDeviceProcessor.extractDevices(getDevices());
+        deviceModels.clear();
+        List<AggregatedDevice> devices = aggregatedDeviceProcessor.extractDevices(getDevices());
+
+        protectedDevices.clear();
+        devices.forEach(aggregatedDevice -> {
+            if(Boolean.parseBoolean(aggregatedDevice.getProperties().get("isProtected"))){
+                protectedDevices.add(aggregatedDevice.getSerialNumber());
+            }
+        });
+
+        return devices;
     }
 
     private void reboot(String deviceSerialNumber, String deviceModel) throws Exception {
@@ -309,13 +293,13 @@ public class SageVueCommunicator extends RestCommunicator implements Aggregator,
         return objectMapper.readTree(devicesResponse);
     }
 
-    public void refreshFaultMessagingStatus() throws Exception {
-        authenticate();
-        JsonNode faultMessagingResponse = objectMapper.readTree(doGet(BASE_URL + "FaultProfile/GetFaultMessaging", String.class));
-        faultMessagingResponse.fields().forEachRemaining(stringJsonNodeEntry -> {
-            faultMessagingStatus.put(stringJsonNodeEntry.getKey(), stringJsonNodeEntry.getValue().asText());
-        });
-    }
+//    public void refreshFaultMessagingStatus() throws Exception {
+//        authenticate();
+//        JsonNode faultMessagingResponse = objectMapper.readTree(doGet(BASE_URL + "FaultProfile/GetFaultMessaging", String.class));
+//        faultMessagingResponse.fields().forEachRemaining(stringJsonNodeEntry -> {
+//            faultMessagingStatus.put(stringJsonNodeEntry.getKey(), stringJsonNodeEntry.getValue().asText());
+//        });
+//    }
 
     @Override
     protected HttpHeaders putExtraRequestHeaders(HttpMethod httpMethod, String uri, HttpHeaders headers) throws Exception {
@@ -325,10 +309,10 @@ public class SageVueCommunicator extends RestCommunicator implements Aggregator,
     }
 
     private void requestFirmwareUpdate(String deviceSerialNumber, String firmwareVersion, String deviceModel) throws Exception {
-
-        logger.debug("Tesira Firmware update requested: " + deviceSerialNumber + " " + firmwareVersion);
         String reponse = doPut(BASE_URL + "Firmware/" + retrieveDeviceUrlSegment(deviceModel), buildFirmwareUpdateRequest(deviceSerialNumber, firmwareVersion), String.class);
-        logger.debug("Tesira Firmware update result: " + reponse);
+        if(logger.isTraceEnabled()) {
+            logger.trace("SageVue: Firmware update result: " + reponse + " for device " + deviceModel + deviceSerialNumber);
+        }
     }
 
     private boolean protectSystem(String deviceId) throws Exception {
