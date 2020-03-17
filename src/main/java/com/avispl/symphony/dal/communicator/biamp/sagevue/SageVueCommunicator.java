@@ -244,7 +244,9 @@ public class SageVueCommunicator extends RestCommunicator implements Aggregator,
                         ((ObjectNode) jsonNode).put("IpAddress", device.findValue("IpAddress").asText());
                     }
 
-                    List<String> firmwareVersions = new ArrayList<>();
+                    Set<String> firmwareVersions = new HashSet<>();
+                    firmwareVersions.add(jsonNode.findValue("FirmwareVersion").asText());
+
                     firmwareVersionsResponse.forEach(firmwareVersion -> firmwareVersions.add(firmwareVersion.get("Version").asText()));
                     ((ObjectNode) jsonNode).put("AvailableFirmwareVersions", String.join(",", firmwareVersions));
                 });
