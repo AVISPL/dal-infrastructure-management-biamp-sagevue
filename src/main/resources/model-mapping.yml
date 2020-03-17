@@ -25,7 +25,7 @@ models:
         isProtected: device.IsProtected
         ipAddress: device.IpAddress
         occupiedStatus: device.OccupiedStatus || "None"
-        deviceFaults: "device.Faults.length == 0 ? \"None\" : device.Faults"
+        deviceFaults: "var value = \"\";device.Faults.forEach(function (d){value+=(d.FaultId + \"|\" + d.IndicatorId + \":\" + d.Message + \"\\\n\");});value || \"None\""
       mapping:
         deviceMake: Biamp
         deviceName: TesiraFORTÉ
