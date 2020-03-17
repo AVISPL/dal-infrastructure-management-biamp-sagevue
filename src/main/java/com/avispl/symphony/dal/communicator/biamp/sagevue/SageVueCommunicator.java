@@ -205,7 +205,6 @@ public class SageVueCommunicator extends RestCommunicator implements Aggregator,
         devices.put("firmwareVersion", firmwareVersion);
 
         firmwareUpdatePayload.put("firmwareUpdate", devices);
-
         return firmwareUpdatePayload;
     }
 
@@ -244,9 +243,8 @@ public class SageVueCommunicator extends RestCommunicator implements Aggregator,
                     if (device != null) {
                         ((ObjectNode) jsonNode).put("IpAddress", device.findValue("IpAddress").asText());
                     }
-                    List<String> firmwareVersions = new ArrayList<>();
-                    firmwareVersions.add(jsonNode.findValue("FirmwareVersion").asText());
 
+                    List<String> firmwareVersions = new ArrayList<>();
                     firmwareVersionsResponse.forEach(firmwareVersion -> firmwareVersions.add(firmwareVersion.get("Version").asText()));
                     ((ObjectNode) jsonNode).put("AvailableFirmwareVersions", String.join(",", firmwareVersions));
                 });
@@ -309,9 +307,10 @@ public class SageVueCommunicator extends RestCommunicator implements Aggregator,
     }
 
     private void requestFirmwareUpdate(String deviceSerialNumber, String firmwareVersion, String deviceModel) throws Exception {
-        String reponse = doPut(BASE_URL + "Firmware/" + retrieveDeviceUrlSegment(deviceModel), buildFirmwareUpdateRequest(deviceSerialNumber, firmwareVersion), String.class);
-        if(logger.isTraceEnabled()) {
-            logger.trace("SageVue: Firmware update result: " + reponse + " for device " + deviceModel + deviceSerialNumber);
+        devicesFirmwareVersions.remove(deviceSerialNumber);
+        String response = doPut(BASE_URL + "Firmware/" + retrieveDeviceUrlSegment(deviceModel), buildFirmwareUpdateRequest(deviceSerialNumber, firmwareVersion), String.class);
+        if(logger.isDebugEnabled()) {
+            logger.trace("SageVue: Firmware update result: " + response + " for device " + deviceModel + deviceSerialNumber);
         }
     }
 
