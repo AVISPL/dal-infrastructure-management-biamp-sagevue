@@ -53,7 +53,7 @@ public class SageVueCommunicator extends RestCommunicator implements Aggregator,
     @Override
     protected void internalInit() throws Exception {
         super.internalInit();
-        Map<String, PropertiesMapping> mapping = new PropertiesMappingParser().loadYML("model-mapping.yml");
+        Map<String, PropertiesMapping> mapping = new PropertiesMappingParser().loadYML("sagevue/model-mapping.yml", getClass());
         aggregatedDeviceProcessor = new AggregatedDeviceProcessor(mapping);
     }
 

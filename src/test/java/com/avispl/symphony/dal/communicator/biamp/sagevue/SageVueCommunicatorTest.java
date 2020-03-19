@@ -1,11 +1,11 @@
 package com.avispl.symphony.dal.communicator.biamp.sagevue;
 
 import com.atlassian.ta.wiremockpactgenerator.WireMockPactGenerator;
+import com.avispl.symphony.api.dal.dto.control.AdvancedControllableProperty;
 import com.avispl.symphony.api.dal.dto.monitor.ExtendedStatistics;
 import com.avispl.symphony.api.dal.dto.monitor.Statistics;
 import com.avispl.symphony.api.dal.dto.monitor.aggregator.AggregatedDevice;
 import com.avispl.symphony.dal.communicator.HttpCommunicator;
-import com.fasterxml.jackson.databind.JsonNode;
 import com.github.tomakehurst.wiremock.junit.WireMockRule;
 import org.junit.Assert;
 import org.junit.Rule;
@@ -57,7 +57,7 @@ public class SageVueCommunicatorTest {
         Assert.assertFalse(devices.isEmpty());
         Assert.assertEquals("03275657", devices.get(0).getSerialNumber());
         Assert.assertEquals("172.31.254.129", devices.get(0).getProperties().get("ipAddress"));
-        Assert.assertEquals("[3.10.0.241, 3.10.0.242, 3.11.0.81, 3.11.0.82, 3.11.1.31, 3.11.1.32, 3.12.0.15, 3.13.0.23, 3.14.1.4, 3.14.2.2, 3.5.2.2, 3.6.0.11, 3.7.0.17, 3.7.1.5, 3.8.0.241, 3.8.0.242, 3.9.0.141, 3.9.0.142]", devices.get(0).getProperties().get("availableFirmwareVersions"));
+        Assert.assertEquals(19, ((AdvancedControllableProperty.DropDown)devices.get(0).getControllableProperties().get(1).getType()).getOptions().length);
     }
 
     @Test
