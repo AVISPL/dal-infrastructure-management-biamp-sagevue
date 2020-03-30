@@ -1,6 +1,7 @@
 package com.avispl.symphony.dal.communicator.biamp.sagevue;
 
 import com.avispl.symphony.api.dal.control.Controller;
+import com.avispl.symphony.api.dal.dto.control.AdvancedControllableProperty;
 import com.avispl.symphony.api.dal.dto.control.ControllableProperty;
 import com.avispl.symphony.api.dal.dto.monitor.ExtendedStatistics;
 import com.avispl.symphony.api.dal.dto.monitor.Statistics;
@@ -32,7 +33,6 @@ public class SageVueCommunicator extends RestCommunicator implements Aggregator,
 //    private Map<String, String> faultMessagingStatus = new HashMap<>();
     private List<String> protectedSystems = new ArrayList<>();
     private List<String> protectedDevices = new ArrayList<>();
-    private Map<String, String> baseControls = new HashMap<>();
     private Map<String, String> devicesFirmwareVersions = new HashMap<>();
     private Map<String, String> deviceModels = new HashMap<>();
 
@@ -59,21 +59,23 @@ public class SageVueCommunicator extends RestCommunicator implements Aggregator,
 
     @Override
     public void controlProperty(ControllableProperty controllableProperty) throws Exception {
+        logger.debug("SAGEVUE: " + String.valueOf(controllableProperty.getProperty()));
+        logger.debug("SAGEVUE: " + String.valueOf(controllableProperty.getDeviceId()));
+        logger.debug("SAGEVUE: " + String.valueOf(controllableProperty.getValue()));
+
         String property = controllableProperty.getProperty();
         String deviceId = controllableProperty.getDeviceId();
         String value = String.valueOf(controllableProperty.getValue());
         String modelName = deviceModels.get(deviceId);
 
-        if(property.startsWith("Protect System")) {
+        if(property.startsWith("System")) {
             String systemId = property.replaceAll("[^\\d.]", "");
             switch (value) {
                 case "1":
                     protectSystem(systemId);
-                    baseControls.put(property, "true");
                     break;
                 case "0":
                     unprotectSystem(systemId);
-                    baseControls.put(property, "false");
                     break;
                 default:
                     break;
@@ -126,7 +128,7 @@ public class SageVueCommunicator extends RestCommunicator implements Aggregator,
     @Override
     public List<Statistics> getMultipleStatistics() throws Exception {
         ExtendedStatistics statistics = new ExtendedStatistics();
-        Map<String, String> controls = new HashMap<>();
+        List<AdvancedControllableProperty> controls = new ArrayList<>();
         Map<String, String> multipleStatistics = new HashMap<>();
         ArrayNode systems = (ArrayNode) getSystems().withArray("Systems");
 
@@ -135,18 +137,23 @@ public class SageVueCommunicator extends RestCommunicator implements Aggregator,
             String systemId = jsonNode.get("SystemId").asText();
             boolean isProtected = jsonNode.get("IsProtected").asBoolean();
 
-            if(baseControls.isEmpty()){
-                baseControls.put("Protect System " + systemId, String.valueOf(isProtected));
-            }
-            multipleStatistics.putAll(baseControls);
-            controls.put("Protect System " + systemId, "Toggle");
+            AdvancedControllableProperty.Switch protectSystemSwitch = new AdvancedControllableProperty.Switch();
+            protectSystemSwitch.setLabelOff("Unprotect");
+            protectSystemSwitch.setLabelOn("Protect");
+
+            AdvancedControllableProperty protectSystemControl =
+                    new AdvancedControllableProperty("System " + systemId, new Date(), protectSystemSwitch, isProtected);
+
+            multipleStatistics.put("System " + systemId, String.valueOf(isProtected));
+            controls.add(protectSystemControl);
+
             if(isProtected){
                 protectedSystems.add(systemId);
             }
         });
 
         statistics.setStatistics(multipleStatistics);
-        statistics.setControl(controls);
+        statistics.setControllableProperties(controls);
         return singletonList(statistics);
     }
 
