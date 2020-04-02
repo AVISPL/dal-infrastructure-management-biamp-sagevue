@@ -59,10 +59,6 @@ public class SageVueCommunicator extends RestCommunicator implements Aggregator,
 
     @Override
     public void controlProperty(ControllableProperty controllableProperty) throws Exception {
-        logger.debug("SAGEVUE: " + String.valueOf(controllableProperty.getProperty()));
-        logger.debug("SAGEVUE: " + String.valueOf(controllableProperty.getDeviceId()));
-        logger.debug("SAGEVUE: " + String.valueOf(controllableProperty.getValue()));
-
         String property = controllableProperty.getProperty();
         String deviceId = controllableProperty.getDeviceId();
         String value = String.valueOf(controllableProperty.getValue());
