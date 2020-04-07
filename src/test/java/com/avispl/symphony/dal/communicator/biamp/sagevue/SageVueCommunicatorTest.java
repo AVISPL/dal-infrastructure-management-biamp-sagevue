@@ -64,6 +64,6 @@ public class SageVueCommunicatorTest {
     public void getSystemsAndControlsTest() throws Exception {
         List<Statistics> devices = sageVueCommunicator.getMultipleStatistics();
         Assert.assertFalse(devices.isEmpty());
-        Assert.assertFalse(((ExtendedStatistics)devices.get(0)).getControl().isEmpty());
+        Assert.assertFalse(((ExtendedStatistics)devices.get(0)).getControllableProperties().isEmpty());
     }
 }

@@ -37,12 +37,12 @@ models:
         Reboot:
           type: Button
           label: Reboot
-          labelPressed: Reboot
+          labelPressed: Rebooting
           gracePeriod: 0
         FirmwareUpdate:
           type: Button
           label: FirmwareUpdate
-          labelPressed: FirmwareUpdate
+          labelPressed: Updating
           gracePeriod: 0
         AvailableFirmwareVersions:
           type: DropDown
