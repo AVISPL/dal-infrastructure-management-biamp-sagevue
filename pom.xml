@@ -6,9 +6,9 @@
 
     <groupId>com.avispl.symphony.dal.device.biamp.sagevue</groupId>
     <artifactId>symphony-dal-communicator-biamp-sagevue</artifactId>
-    <version>0.2.16-SNAPSHOT</version>
+    <version>1.0.0</version>
     <properties>
-        <symphonyApiVersion>4.9.0</symphonyApiVersion>
+        <symphonyApiVersion>RELEASE</symphonyApiVersion>
     </properties>
     <build>
         <plugins>
@@ -96,21 +96,21 @@
             <artifactId>symphony-api-dal</artifactId>
             <version>${symphonyApiVersion}</version>
             <scope>system</scope>
-            <systemPath>${basedir}/lib/symphony-api-dal-4.9.0.jar</systemPath>
+            <systemPath>${basedir}/lib/symphony-api-dal-4.9.0.00409.jar</systemPath>
         </dependency>
         <dependency>
             <groupId>com.avispl.symphony.dal</groupId>
             <artifactId>symphony-dal-commons</artifactId>
             <version>${symphonyApiVersion}</version>
             <scope>system</scope>
-            <systemPath>${basedir}/lib/symphony-dal-commons-4.9.0.jar</systemPath>
+            <systemPath>${basedir}/lib/symphony-dal-commons-4.9.0.00409.jar</systemPath>
         </dependency>
         <dependency>
             <groupId>com.avispl.symphony.api</groupId>
             <artifactId>symphony-api-commons</artifactId>
             <version>${symphonyApiVersion}</version>
             <scope>system</scope>
-            <systemPath>${basedir}/lib/symphony-api-commons-4.9.0.jar</systemPath>
+            <systemPath>${basedir}/lib/symphony-api-commons-4.9.0.00409.jar</systemPath>
         </dependency>
         <dependency>
             <groupId>org.icmp4j</groupId>
