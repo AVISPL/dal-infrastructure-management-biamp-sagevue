@@ -25,7 +25,7 @@ import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
 
 import java.util.*;
-import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 
 import static java.util.Collections.*;
@@ -49,7 +49,7 @@ public class SageVueCommunicator extends RestCommunicator implements Aggregator,
      */
     private Map<String, String> deviceModels = new HashMap<>();
 
-    private ReentrantReadWriteLock readWriteLock = new ReentrantReadWriteLock();
+    private final ReentrantLock lock = new ReentrantLock();
     private AggregatedDeviceProcessor aggregatedDeviceProcessor;
 
     private static final String BASE_URL = "/biampsagevue/api/";
@@ -87,8 +87,8 @@ public class SageVueCommunicator extends RestCommunicator implements Aggregator,
      */
     @Override
     public void controlProperty(ControllableProperty controllableProperty) throws Exception {
+        lock.lock();
         try {
-            readWriteLock.writeLock().lock();
 
             String property = controllableProperty.getProperty();
             String deviceId = controllableProperty.getDeviceId();
@@ -128,7 +128,7 @@ public class SageVueCommunicator extends RestCommunicator implements Aggregator,
                 }
             }
         } finally {
-            readWriteLock.writeLock().unlock();
+            lock.unlock();
         }
     }
 
@@ -315,8 +315,8 @@ public class SageVueCommunicator extends RestCommunicator implements Aggregator,
      */
     private List<AggregatedDevice> fetchDevicesList() throws Exception {
         List<AggregatedDevice> devices = new ArrayList<>();
+        lock.lock();
         try {
-            readWriteLock.readLock().lock();
 
             deviceModels.clear();
             devices.addAll(aggregatedDeviceProcessor.extractDevices(getDevices()));
@@ -328,7 +328,7 @@ public class SageVueCommunicator extends RestCommunicator implements Aggregator,
                 }
             });
         } finally {
-            readWriteLock.readLock().unlock();
+            lock.unlock();
         }
 
         return devices;
