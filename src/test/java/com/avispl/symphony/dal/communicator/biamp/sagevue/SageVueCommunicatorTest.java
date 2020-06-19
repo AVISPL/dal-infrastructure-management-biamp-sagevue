@@ -46,12 +46,6 @@ public class SageVueCommunicatorTest {
     }
 
     @Test
-    public void authenticationIsSuccessful() throws Exception {
-        sageVueCommunicator.authenticate();
-        Assert.assertFalse(sageVueCommunicator.getLoginId().isEmpty());
-    }
-
-    @Test
     public void getDevicesTest() throws Exception {
         List<AggregatedDevice> devices = sageVueCommunicator.retrieveMultipleStatistics();
         Assert.assertFalse(devices.isEmpty());
@@ -64,6 +58,6 @@ public class SageVueCommunicatorTest {
     public void getSystemsAndControlsTest() throws Exception {
         List<Statistics> devices = sageVueCommunicator.getMultipleStatistics();
         Assert.assertFalse(devices.isEmpty());
-        Assert.assertFalse(((ExtendedStatistics)devices.get(0)).getControl().isEmpty());
+        Assert.assertFalse(((ExtendedStatistics)devices.get(0)).getControllableProperties().isEmpty());
     }
 }
