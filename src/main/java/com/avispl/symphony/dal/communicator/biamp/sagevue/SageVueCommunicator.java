@@ -9,6 +9,7 @@ import com.avispl.symphony.api.dal.dto.control.ControllableProperty;
 import com.avispl.symphony.api.dal.dto.monitor.ExtendedStatistics;
 import com.avispl.symphony.api.dal.dto.monitor.Statistics;
 import com.avispl.symphony.api.dal.dto.monitor.aggregator.AggregatedDevice;
+import com.avispl.symphony.api.dal.error.CommandFailureException;
 import com.avispl.symphony.api.dal.monitor.Monitorable;
 import com.avispl.symphony.api.dal.monitor.aggregator.Aggregator;
 import com.avispl.symphony.dal.aggregator.parser.AggregatedDeviceProcessor;
@@ -24,6 +25,7 @@ import org.springframework.http.*;
 import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
 
+import javax.security.auth.login.FailedLoginException;
 import java.util.*;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
@@ -32,7 +34,7 @@ import static java.util.Collections.*;
 
 public class SageVueCommunicator extends RestCommunicator implements Aggregator, Monitorable, Controller {
 
-    private String loginId;
+    private String loginId ;
     private ObjectMapper objectMapper;
 
     /**
@@ -170,7 +172,7 @@ public class SageVueCommunicator extends RestCommunicator implements Aggregator,
         ExtendedStatistics statistics = new ExtendedStatistics();
         List<AdvancedControllableProperty> controls = new ArrayList<>();
         Map<String, String> multipleStatistics = new HashMap<>();
-        ArrayNode systems = (ArrayNode) getSystems().withArray("Systems");
+        ArrayNode systems = (ArrayNode) getSystems(false).withArray("Systems");
 
         systems.forEach(jsonNode -> {
             String systemId = jsonNode.get("SystemId").asText();
@@ -319,7 +321,8 @@ public class SageVueCommunicator extends RestCommunicator implements Aggregator,
         try {
 
             deviceModels.clear();
-            devices.addAll(aggregatedDeviceProcessor.extractDevices(getDevices()));
+            JsonNode devicesJson = getDevices(false);
+            devices.addAll(aggregatedDeviceProcessor.extractDevices(devicesJson));
 
             protectedDevices.clear();
             devices.forEach(aggregatedDevice -> {
@@ -362,10 +365,19 @@ public class SageVueCommunicator extends RestCommunicator implements Aggregator,
      *
      * @return JsonNode instance containing an array of the devices
      */
-    private JsonNode getDevices() throws Exception {
-        authenticate();
-        String devicesResponse = doGet(BASE_URL + "devices", String.class);
-        JsonNode devices = objectMapper.readTree(devicesResponse);
+    private JsonNode getDevices(boolean retryAuthentication) throws Exception {
+        JsonNode devices;
+        try {
+            String devicesResponse = doGet(BASE_URL + "devices", String.class);
+            devices = objectMapper.readTree(devicesResponse);
+        } catch (FailedLoginException | CommandFailureException fle){
+            if(retryAuthentication){
+                throw new FailedLoginException("Failed to get list of devices using SessionID: " + loginId);
+            }
+            authenticate();
+            return getDevices(true);
+        }
+
         devices.fieldNames().forEachRemaining(s -> {
             if(s.endsWith("Devices")){
                 String modelName = s.replaceAll("Devices", "");
@@ -384,6 +396,16 @@ public class SageVueCommunicator extends RestCommunicator implements Aggregator,
 
                     firmwareVersionsResponse.forEach(firmwareVersion -> firmwareVersions.add(firmwareVersion.get("Version").asText()));
                     ((ObjectNode) jsonNode).put("AvailableFirmwareVersions", String.join(",", firmwareVersions));
+
+                    ArrayNode deviceFaults = (ArrayNode) jsonNode.get("Faults");
+                    if(deviceFaults.size() > 0){
+                        StringBuilder faultsStringBuilder = new StringBuilder();
+                        deviceFaults.forEach(fault -> {
+                            faultsStringBuilder.append(fault.get("FaultId").asText()).append("|")
+                                    .append(fault.get("IndicatorId").asText()).append(":").append(fault.get("Message").asText()).append("\n");
+                        });
+                        ((ObjectNode) jsonNode).put("Faults", faultsStringBuilder.toString());
+                    }
                 });
             }
         });
@@ -431,10 +453,17 @@ public class SageVueCommunicator extends RestCommunicator implements Aggregator,
      *
      * @return JsonNode instance containing list of SageVue systems
      */
-    private JsonNode getSystems() throws Exception {
-        authenticate();
-        String devicesResponse = doGet(BASE_URL + "systems", String.class);
-        return objectMapper.readTree(devicesResponse);
+    private JsonNode getSystems(boolean retryAuthentication) throws Exception {
+        try {
+            String devicesResponse = doGet(BASE_URL + "systems", String.class);
+            return objectMapper.readTree(devicesResponse);
+        } catch (FailedLoginException | CommandFailureException fle){
+            if(retryAuthentication){
+                throw new FailedLoginException("Failed to get list of systems using SessionID: " + loginId);
+            }
+            authenticate();
+            return getSystems(true);
+        }
     }
 
     @Override

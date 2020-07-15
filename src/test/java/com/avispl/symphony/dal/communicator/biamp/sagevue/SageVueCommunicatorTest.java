@@ -52,12 +52,7 @@ public class SageVueCommunicatorTest {
         Assert.assertEquals("03275657", devices.get(0).getSerialNumber());
         Assert.assertEquals("172.31.254.129", devices.get(0).getProperties().get("ipAddress"));
         Assert.assertEquals(19, ((AdvancedControllableProperty.DropDown)devices.get(0).getControllableProperties().get(1).getType()).getOptions().length);
-    }
-
-    @Test
-    public void getSystemsAndControlsTest() throws Exception {
-        List<Statistics> devices = sageVueCommunicator.getMultipleStatistics();
-        Assert.assertFalse(devices.isEmpty());
-        Assert.assertFalse(((ExtendedStatistics)devices.get(0)).getControllableProperties().isEmpty());
+        Assert.assertEquals("123|ERR:Unable to get information\n456|ERR2:Unable to fetch information\n789|FWER:Firmware error\n", devices.get(0).getProperties().get("deviceFaults"));
+        Assert.assertEquals("Rebooting", devices.get(0).getProperties().get("occupiedStatus"));
     }
 }
