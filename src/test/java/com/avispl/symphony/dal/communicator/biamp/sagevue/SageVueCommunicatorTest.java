@@ -1,3 +1,6 @@
+/*
+ * Copyright (c) 2020 AVI-SPL Inc. All Rights Reserved.
+ */
 package com.avispl.symphony.dal.communicator.biamp.sagevue;
 
 import com.atlassian.ta.wiremockpactgenerator.WireMockPactGenerator;
