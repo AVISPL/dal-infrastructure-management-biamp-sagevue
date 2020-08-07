@@ -48,3 +48,4 @@ models:
           type: DropDown
           options: get("AvailableFirmwareVersions")
           labels: get("AvailableFirmwareVersions")
+          value: get("FirmwareVersion")
