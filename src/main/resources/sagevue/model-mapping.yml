@@ -25,7 +25,7 @@ models:
         isProtected: get("IsProtected")
         ipAddress: get("IpAddress")
         occupiedStatus: "get(\"OccupiedStatus\").asText().length() == 0 ? \"None\" : get(\"OccupiedStatus\")"
-        deviceFaults: get("Faults")
+        deviceFaults: "get(\"Faults\").asText().length() == 0 ? \"None\" : get(\"Faults\")"
       mapping:
         deviceMake: Biamp
         deviceName: TesiraFORTÉ
