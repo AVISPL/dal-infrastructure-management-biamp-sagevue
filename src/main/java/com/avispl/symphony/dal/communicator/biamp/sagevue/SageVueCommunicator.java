@@ -27,6 +27,7 @@ import org.springframework.util.StringUtils;
 
 import javax.security.auth.login.FailedLoginException;
 import java.util.*;
+import java.util.concurrent.*;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 
@@ -34,8 +35,151 @@ import static java.util.Collections.*;
 
 public class SageVueCommunicator extends RestCommunicator implements Aggregator, Monitorable, Controller {
 
-    private String loginId ;
+    class SageVueDeviceDataLoader implements Runnable {
+        private volatile boolean inProgress;
+
+        public SageVueDeviceDataLoader() {
+            inProgress = true;
+        }
+
+        @Override
+        public void run() {
+           mainloop: while(inProgress) {
+                try {
+                    TimeUnit.MILLISECONDS.sleep(500);
+                } catch (InterruptedException e) {
+                    // Ignore for now
+                }
+
+                if(!inProgress){
+                    break mainloop;
+                }
+
+               // next line will determine whether XiO monitoring was paused
+               updateAggregatorStatus();
+               if (devicePaused) {
+                   if (logger.isDebugEnabled()) {
+                       logger.debug(String.format(
+                               "Device adapter did not receive retrieveMultipleStatistics call in %s s. Statistics retrieval and device metadata retrieval is suspended.",
+                               retrieveStatisticsTimeOut / 1000));
+                   }
+                   continue mainloop;
+               }
+
+                try {
+                    if(logger.isDebugEnabled()) {
+                        logger.debug("SageVue: fetching devices list");
+                    }
+                    fetchDevicesList();
+                    if(logger.isDebugEnabled()) {
+                        logger.debug("SageVue: fetched devices list: " + aggregatedDevices);
+                    }
+                } catch (Exception e) {
+                    logger.error("Error occurred during device list retrieval: " + e.getMessage() + " with cause: " + e.getCause().getMessage());
+                }
+
+                if(!inProgress){
+                    break mainloop;
+                }
+
+                int aggregatedDevicesCount = aggregatedDevices.size();
+                if(aggregatedDevicesCount == 0 || nextDevicesCollectionIterationTimestamp > System.currentTimeMillis()) {
+                    try {
+                        TimeUnit.MILLISECONDS.sleep(1000);
+                    } catch (InterruptedException e) {
+                        //
+                    }
+                    continue mainloop;
+                }
+
+                List<String> scannedDevicesSerialNumberList = aggregatedDevices.values().stream().map(AggregatedDevice::getSerialNumber).collect(Collectors.toList());
+
+                for(String serialNumber : scannedDevicesSerialNumberList){
+                    if(!inProgress){
+                        break;
+                    }
+                    devicesExecutionPool.add(executorService.submit(() -> fetchDeviceDetails(serialNumber)));
+                }
+
+                do {
+                    try {
+                        TimeUnit.MILLISECONDS.sleep(500);
+                    } catch (InterruptedException e){
+                        if(!inProgress){
+                            break;
+                        }
+                    }
+                    devicesExecutionPool.removeIf(Future::isDone);
+                } while (!devicesExecutionPool.isEmpty());
+
+                // We don't want to fetch devices statuses too often, so by default it's currentTime + 30s
+                // otherwise - the variable is reset by the retrieveMultipleStatistics() call, which
+                // launches devices detailed statistics collection
+               nextDevicesCollectionIterationTimestamp = System.currentTimeMillis() + 30000;
+
+               if (logger.isDebugEnabled()) {
+                   logger.debug("Finished collecting devices statistics cycle at " + new Date());
+               }
+            }
+
+            // Finished collecting
+        }
+
+        /**
+         * Triggers main loop to stop
+         */
+        public void stop() {
+            inProgress = false;
+        }
+    }
+    private String loginId;
     private ObjectMapper objectMapper;
+    /**
+     * If the {@link SageVueCommunicator#deviceMetaDataInformationRetrievalTimeout} is set to a value that is too small -
+     * devices list will be fetched too frequently. In order to avoid this - the minimal value is based on this value.
+     */
+    private static final long defaultMetaDataTimeout = 2 * 60 * 1000;
+
+    /**
+     * Device metadata retrieval timeout. The general devices list is retrieved once during this time period.
+     */
+    private long deviceMetaDataInformationRetrievalTimeout = 5 * 60 * 1000;
+    /**
+     * Time period within which the device metadata (basic devices information) cannot be refreshed.
+     * If ignored if device list is not yet retrieved or the cached device list is empty {@link SageVueCommunicator#aggregatedDevices}
+     */
+    private volatile long validDeviceMetaDataRetrievalPeriodTimestamp;
+
+    /**
+     * This parameter holds timestamp of when we need to stop performing API calls
+     * It used when device stop retrieving statistic. Updated each time of called #retrieveMultipleStatistics
+     */
+    private volatile long validRetrieveStatisticsTimestamp;
+
+    /**
+     * Aggregator inactivity timeout. If the {@link SageVueCommunicator#retrieveMultipleStatistics()}  method is not
+     * called during this period of time - device is considered to be paused, thus the Cloud API
+     * is not supposed to be called
+     */
+    private static final long retrieveStatisticsTimeOut = 3 * 60 * 1000;
+
+    /**
+     * We don't want the statistics to be collected constantly, because if there's not a big list of devices -
+     * new devices statistics loop will be launched before the next monitoring iteration. To avoid that -
+     * this variable stores a timestamp which validates it, so when the devices statistics is done collecting, variable
+     * is set to currentTime + 30s, at the same time, calling {@link #retrieveMultipleStatistics()} and updating the
+     * {@link #aggregatedDevices} resets it to the currentTime timestamp, which will re-activate data collection.
+     */
+    private static long nextDevicesCollectionIterationTimestamp;
+
+    /**
+     * Indicates whether a device is considered as paused.
+     * True by default so if the system is rebooted and the actual value is lost -> the device won't start stats
+     * collection unless the {@link SageVueCommunicator#retrieveMultipleStatistics()} method is called which will change it
+     * to a correct value
+     */
+    private volatile boolean devicePaused = true;
+
 
     /**
      * List of protected devices within an aggregator to use during control operations
@@ -51,10 +195,16 @@ public class SageVueCommunicator extends RestCommunicator implements Aggregator,
      */
     private Map<String, String> deviceModels = new HashMap<>();
 
+    private Map<String, AggregatedDevice> aggregatedDevices = new ConcurrentHashMap<>();
+
     private final ReentrantLock lock = new ReentrantLock();
     private AggregatedDeviceProcessor aggregatedDeviceProcessor;
 
-    private static final String BASE_URL = "/biampsagevue/api/";
+    private static final String BASE_URL = "biampsagevue/api/";
+
+    private static ExecutorService executorService;
+    private List<Future> devicesExecutionPool = new ArrayList<>();
+    private SageVueDeviceDataLoader deviceDataLoader;
 
     public SageVueCommunicator() {
         super();
@@ -63,6 +213,7 @@ public class SageVueCommunicator extends RestCommunicator implements Aggregator,
     }
 
     /***
+     * {@inheritDoc}
      * Initializes AggregatedDeviceProcessor for extracting AggregatedDevice instances out of the
      * devices list, based on model-mapping.yml mapping
      */
@@ -70,10 +221,34 @@ public class SageVueCommunicator extends RestCommunicator implements Aggregator,
     protected void internalInit() throws Exception {
         super.internalInit();
         Map<String, PropertiesMapping> mapping = new PropertiesMappingParser().loadYML("sagevue/model-mapping.yml", getClass());
+        logger.debug("YML mapping: " + mapping);
         aggregatedDeviceProcessor = new AggregatedDeviceProcessor(mapping);
+        executorService = Executors.newFixedThreadPool(8);
+        executorService.submit(deviceDataLoader = new SageVueDeviceDataLoader());
+        validDeviceMetaDataRetrievalPeriodTimestamp = System.currentTimeMillis();
+    }
+
+    @Override
+    protected void internalDestroy() {
+        if (deviceDataLoader != null) {
+            deviceDataLoader.stop();
+            deviceDataLoader = null;
+        }
+
+        if (executorService != null) {
+            executorService.shutdown();
+            executorService = null;
+        }
+
+        devicesExecutionPool.forEach(future -> future.cancel(true));
+        devicesExecutionPool.clear();
+
+        aggregatedDevices.clear();
+        super.internalDestroy();
     }
 
     /**
+     * {@inheritDoc
      * Processes control actions for both SageVue systems and SageVue devices.
      * When the system control is activated - systemId is not present
      * within a ControllableProperty instance, since this is a "native" controllable property.
@@ -91,7 +266,6 @@ public class SageVueCommunicator extends RestCommunicator implements Aggregator,
     public void controlProperty(ControllableProperty controllableProperty) throws Exception {
         lock.lock();
         try {
-
             String property = controllableProperty.getProperty();
             String deviceId = controllableProperty.getDeviceId();
             String value = String.valueOf(controllableProperty.getValue());
@@ -146,7 +320,11 @@ public class SageVueCommunicator extends RestCommunicator implements Aggregator,
 
     @Override
     public List<AggregatedDevice> retrieveMultipleStatistics() throws Exception {
-        return fetchDevicesList();
+        nextDevicesCollectionIterationTimestamp = System.currentTimeMillis();
+//        return fetchDevicesList();
+        updateValidRetrieveStatisticsTimestamp();
+        aggregatedDevices.values().forEach(aggregatedDevice -> aggregatedDevice.setTimestamp(System.currentTimeMillis()));
+        return new ArrayList<>(aggregatedDevices.values());
     }
 
     @Override
@@ -312,29 +490,72 @@ public class SageVueCommunicator extends RestCommunicator implements Aggregator,
     /**
      * Fetch list of devices, handled by SageVue.
      *
-     * @return List<AggregatedDevice> list of AggregatedDevice instances, extracted from the json,
-     * provided by SageVue API
      */
-    private List<AggregatedDevice> fetchDevicesList() throws Exception {
-        List<AggregatedDevice> devices = new ArrayList<>();
+    private void fetchDevicesList() throws Exception {
+        //TODO if should be synchronized?
+        if (aggregatedDevices.size() > 0 && validDeviceMetaDataRetrievalPeriodTimestamp > System.currentTimeMillis()) {
+            if (logger.isDebugEnabled()) {
+                logger.debug(String.format("General devices metadata retrieval is in cooldown. %s seconds left",
+                        (validDeviceMetaDataRetrievalPeriodTimestamp - System.currentTimeMillis()) / 1000));
+            }
+            return;
+        }
+
         lock.lock();
         try {
+            List<AggregatedDevice> devices = new ArrayList<>();
 
             deviceModels.clear();
-            JsonNode devicesJson = getDevices(false);
-            devices.addAll(aggregatedDeviceProcessor.extractDevices(devicesJson));
+           // JsonNode devicesJson = getDevices(false);
+            JsonNode devicesJson = objectMapper.readTree("{   \"TesiraDevices\":[      {         \"Model\":\"FORTE_VT\",         \"ModelDescription\":\"TesiraFORTÉ AVB VT\",         \"SystemDescription\":\"TesiraFORTÉ AVB-VT - Default Configuration 03275657\",         \"FirmwareVersion\":\"3.3.0.18\",         \"OccupiedStatus\":\"Rebooting\",         \"AssetGroupId\":\"4a7a071b-7331-4849-b842-516bae6f395d\",         \"IsControlled\":false,         \"SystemId\":\"03275657\",         \"SerialNumber\":\"03275657\",         \"HostName\":\"TesiraForte03275657\",         \"Description\":\"\",         \"IsProtected\":false,         \"Faults\":[            {               \"FaultId\":\"123\",               \"IndicatorId\":\"ERR\",               \"Message\":\"Unable to get information\"            },            {               \"FaultId\":\"456\",               \"IndicatorId\":\"ERR2\",               \"Message\":\"Unable to fetch information\"            },            {               \"FaultId\":\"789\",               \"IndicatorId\":\"FWER\",               \"Message\":\"Firmware error\"            }         ],         \"Status\":0,         \"Labels\":[                     ]      },      {         \"Model\":\"FORTE_VT\",         \"ModelDescription\":\"TesiraFORTÉ AVB VT Gilbert\",         \"SystemDescription\":\"TesiraFORTÉ AVB-VT - Default Configuration 5ffee89bad26b4e01ffcff56\",         \"FirmwareVersion\":\"3.3.0.18\",         \"OccupiedStatus\":\"Rebooting\",         \"AssetGroupId\":\"a6c508e7-d3aa-4cd4-a740-057bd4e170ea\",         \"IsControlled\":false,         \"SystemId\":\"5ffee89bcd3a4a87aefa518e\",         \"SerialNumber\":\"5ffee89be665ba7214a57597\",         \"HostName\":\"TesiraForte5ffee89ba1efe4b62c288a3b\",         \"Description\":\"\",         \"IsProtected\":false,         \"Faults\":[            {               \"FaultId\":123,               \"IndicatorId\":\"ERR\",               \"Message\":\"Unable to get information\"            },            {               \"FaultId\":456,               \"IndicatorId\":\"ERR2\",               \"Message\":\"Unable to fetch information\"            },            {               \"FaultId\":789,               \"IndicatorId\":\"FWER\",               \"Message\":\"Firmware error\"            }         ],         \"Status\":1,         \"Labels\":[                     ]      },      {         \"Model\":\"FORTE_VT\",         \"ModelDescription\":\"TesiraFORTÉ AVB VT Morales\",         \"SystemDescription\":\"TesiraFORTÉ AVB-VT - Default Configuration 5ffee89ba82db6e6d7263c95\",         \"FirmwareVersion\":\"3.3.0.18\",         \"OccupiedStatus\":\"Rebooting\",         \"AssetGroupId\":\"dc5b6ac2-3c6a-4f5a-8618-63a25b348ee6\",         \"IsControlled\":false,         \"SystemId\":\"5ffee89b896d8a82524ff858\",         \"SerialNumber\":\"5ffee89b1a51f5271a7e0a12\",         \"HostName\":\"TesiraForte5ffee89bd3f37b11f7c0cd4d\",         \"Description\":\"\",         \"IsProtected\":false,         \"Faults\":[            {               \"FaultId\":123,               \"IndicatorId\":\"ERR\",               \"Message\":\"Unable to get information\"            },            {               \"FaultId\":456,               \"IndicatorId\":\"ERR2\",               \"Message\":\"Unable to fetch information\"            },            {               \"FaultId\":789,               \"IndicatorId\":\"FWER\",               \"Message\":\"Firmware error\"            }         ],         \"Status\":1,         \"Labels\":[                     ]      },      {         \"Model\":\"FORTE_VT\",         \"ModelDescription\":\"TesiraFORTÉ AVB VT Shawn\",         \"SystemDescription\":\"TesiraFORTÉ AVB-VT - Default Configuration 5ffee89b8db015a1ca3824b1\",         \"FirmwareVersion\":\"3.3.0.18\",         \"OccupiedStatus\":\"Rebooting\",         \"AssetGroupId\":\"3a3c6918-9552-4e2f-859c-2a4ce6540958\",         \"IsControlled\":false,         \"SystemId\":\"5ffee89bda7bb08625d13a29\",         \"SerialNumber\":\"5ffee89b2e68dda3816b6b5e\",         \"HostName\":\"TesiraForte5ffee89b613484edafe98b71\",         \"Description\":\"\",         \"IsProtected\":true,         \"Faults\":[            {               \"FaultId\":123,               \"IndicatorId\":\"ERR\",               \"Message\":\"Unable to get information\"            },            {               \"FaultId\":456,               \"IndicatorId\":\"ERR2\",               \"Message\":\"Unable to fetch information\"            },            {               \"FaultId\":789,               \"IndicatorId\":\"FWER\",               \"Message\":\"Firmware error\"            }         ],         \"Status\":1,         \"Labels\":[                     ]      }   ],   \"TesiraErrors\":[         ],   \"DevioDevices\":[      {         \"Model\":\"Devio\",         \"ModelDescription\":\"Devio Tasha\",         \"SystemDescription\":\"Devio - Default Configuration 5fff2aa7cb1f6857fea92b62\",         \"FirmwareVersion\":\"3.3.0.18\",         \"OccupiedStatus\":\"Rebooting\",         \"AssetGroupId\":\"01392003-1139-4156-a908-378745f27417\",         \"IsControlled\":false,         \"SystemId\":\"5fff2aa740297d9f0874bcd6\",         \"SerialNumber\":\"5fff2aa7308cf0a53f5d78a9\",         \"HostName\":\"Devio5fff2aa79acc9e23d43177a5\",         \"Description\":\"\",         \"IsProtected\":false,         \"Faults\":[            {               \"FaultId\":123,               \"IndicatorId\":\"ERR\",               \"Message\":\"Unable to get information\"            },            {               \"FaultId\":456,               \"IndicatorId\":\"ERR2\",               \"Message\":\"Unable to fetch information\"            },            {               \"FaultId\":789,               \"IndicatorId\":\"FWER\",               \"Message\":\"Firmware error\"            }         ],         \"Status\":0,         \"Labels\":[                     ]      },      {         \"Model\":\"Devio\",         \"ModelDescription\":\"Devio Janice\",         \"SystemDescription\":\"Devio - Default Configuration 5fff2aa77eeea364cc835e7b\",         \"FirmwareVersion\":\"3.3.0.18\",         \"OccupiedStatus\":\"Rebooting\",         \"AssetGroupId\":\"81907e23-9c90-47d2-be93-47b1a0a16e14\",         \"IsControlled\":false,         \"SystemId\":\"5fff2aa7c5c13cb0131ad3f1\",         \"SerialNumber\":\"5fff2aa7e4a03201392a7bc4\",         \"HostName\":\"Devio5fff2aa7cc8b6ad56c2ab9ef\",         \"Description\":\"\",         \"IsProtected\":false,         \"Faults\":[            {               \"FaultId\":123,               \"IndicatorId\":\"ERR\",               \"Message\":\"Unable to get information\"            },            {               \"FaultId\":456,               \"IndicatorId\":\"ERR2\",               \"Message\":\"Unable to fetch information\"            },            {               \"FaultId\":789,               \"IndicatorId\":\"FWER\",               \"Message\":\"Firmware error\"            }         ],         \"Status\":1,         \"Labels\":[                     ]      },      {         \"Model\":\"Devio\",         \"ModelDescription\":\"Devio Kelsey\",         \"SystemDescription\":\"Devio - Default Configuration 5fff2aa786ee80bc8ed7e722\",         \"FirmwareVersion\":\"3.3.0.18\",         \"OccupiedStatus\":\"Rebooting\",         \"AssetGroupId\":\"fcdba9e3-d963-4bd4-9f3c-364dab2c80b3\",         \"IsControlled\":false,         \"SystemId\":\"5fff2aa71012e6121eb1a2cc\",         \"SerialNumber\":\"5fff2aa765d76512b19f3430\",         \"HostName\":\"Devio5fff2aa7a5d0aa2a196b8d00\",         \"Description\":\"\",         \"IsProtected\":true,         \"Faults\":[            {               \"FaultId\":123,               \"IndicatorId\":\"ERR\",               \"Message\":\"Unable to get information\"            },            {               \"FaultId\":456,               \"IndicatorId\":\"ERR2\",               \"Message\":\"Unable to fetch information\"            },            {               \"FaultId\":789,               \"IndicatorId\":\"FWER\",               \"Message\":\"Firmware error\"            }         ],         \"Status\":1,         \"Labels\":[                     ]      },      {         \"Model\":\"Devio\",         \"ModelDescription\":\"Devio Hahn\",         \"SystemDescription\":\"Devio - Default Configuration 5fff2aa74d280daa24d9a19d\",         \"FirmwareVersion\":\"3.3.0.18\",         \"OccupiedStatus\":\"Rebooting\",         \"AssetGroupId\":\"a018ab8f-af51-4e88-97e7-271284c6cbcf\",         \"IsControlled\":false,         \"SystemId\":\"5fff2aa79b85f426200232a4\",         \"SerialNumber\":\"5fff2aa72ddd381789c3f07e\",         \"HostName\":\"Devio5fff2aa72732a16aeffb6280\",         \"Description\":\"\",         \"IsProtected\":true,         \"Faults\":[            {               \"FaultId\":123,               \"IndicatorId\":\"ERR\",               \"Message\":\"Unable to get information\"            },            {               \"FaultId\":456,               \"IndicatorId\":\"ERR2\",               \"Message\":\"Unable to fetch information\"            },            {               \"FaultId\":789,               \"IndicatorId\":\"FWER\",               \"Message\":\"Firmware error\"            }         ],         \"Status\":0,         \"Labels\":[                     ]      }\t],\t   \"DevioErrors\":[         ]}");
+            // TODO: null check
+            if(logger.isDebugEnabled()) {
+                logger.debug("Devices List: " + devicesJson);
+            }
+            if(devicesJson == null || devicesJson.isNull() || devicesJson.size() == 0) {
+                return;
+            }
+
+            validDeviceMetaDataRetrievalPeriodTimestamp = System.currentTimeMillis() + Math.max(defaultMetaDataTimeout, deviceMetaDataInformationRetrievalTimeout);
+            devicesJson.fieldNames().forEachRemaining(s -> {
+                logger.debug("Extracting devices with processor: " + aggregatedDeviceProcessor);
+                if(s.endsWith("Devices")){
+                    devices.addAll(aggregatedDeviceProcessor.extractDevices(devicesJson.get(s)));
+                }
+            });
+
+            logger.debug("Devices List Extracted: " + devices + " size: " + devices.size());
 
             protectedDevices.clear();
             devices.forEach(aggregatedDevice -> {
+                logger.debug("Aggregated device: " + aggregatedDevice);
                 if (Boolean.parseBoolean(aggregatedDevice.getProperties().get("isProtected"))) {
                     protectedDevices.add(aggregatedDevice.getSerialNumber());
                 }
+                if(aggregatedDevices.containsKey(aggregatedDevice.getSerialNumber())){
+                    aggregatedDevices.get(aggregatedDevice.getSerialNumber()).setDeviceOnline(aggregatedDevice.getDeviceOnline());
+                } else {
+                    aggregatedDevices.put(aggregatedDevice.getSerialNumber(), aggregatedDevice);
+                }
             });
+            nextDevicesCollectionIterationTimestamp = System.currentTimeMillis();
         } finally {
             lock.unlock();
         }
+    }
 
-        return devices;
+    /**
+     * Update the status of the device.
+     * The device is considered as paused if did not receive any retrieveMultipleStatistics()
+     * calls during {@link SageVueCommunicator#validRetrieveStatisticsTimestamp}
+     */
+    private synchronized void updateAggregatorStatus() {
+        devicePaused = validRetrieveStatisticsTimestamp < System.currentTimeMillis();
+    }
+
+    private synchronized void updateValidRetrieveStatisticsTimestamp() {
+        validRetrieveStatisticsTimestamp = System.currentTimeMillis() + retrieveStatisticsTimeOut;
+        updateAggregatorStatus();
     }
 
     /**
@@ -383,19 +604,8 @@ public class SageVueCommunicator extends RestCommunicator implements Aggregator,
                 String modelName = s.replaceAll("Devices", "");
                 devices.get(s).forEach(jsonNode -> {
                     String deviceSerialNumber = jsonNode.findValue("SerialNumber").asText();
-                    JsonNode device = getDevice(deviceSerialNumber, modelName);
-                    ArrayNode firmwareVersionsResponse = getFirmwareVersions(modelName);
-
                     deviceModels.put(deviceSerialNumber, modelName);
-                    if (device != null) {
-                        ((ObjectNode) jsonNode).put("IpAddress", device.findValue("IpAddress").asText());
-                    }
 
-                    Set<String> firmwareVersions = new HashSet<>();
-                    firmwareVersions.add(jsonNode.findValue("FirmwareVersion").asText());
-
-                    firmwareVersionsResponse.forEach(firmwareVersion -> firmwareVersions.add(firmwareVersion.get("Version").asText()));
-                    ((ObjectNode) jsonNode).put("AvailableFirmwareVersions", String.join(",", firmwareVersions));
 
                     ArrayNode deviceFaults = (ArrayNode) jsonNode.get("Faults");
                     if(deviceFaults.size() > 0){
@@ -410,6 +620,22 @@ public class SageVueCommunicator extends RestCommunicator implements Aggregator,
             }
         });
         return devices;
+    }
+
+    private void fetchDeviceDetails(String serialNumber) {
+        String modelName = deviceModels.get(serialNumber);
+        JsonNode device = getDevice(serialNumber, modelName);
+
+
+        if (device != null) {
+            aggregatedDeviceProcessor.applyProperties(aggregatedDevices.get(serialNumber), device, aggregatedDevices.get(serialNumber).getDeviceModel());
+        }
+
+        Set<String> firmwareVersions = new HashSet<>();
+        ArrayNode firmwareVersionsResponse = getFirmwareVersions(modelName);
+        firmwareVersionsResponse.forEach(firmwareVersion -> firmwareVersions.add(firmwareVersion.get("Version").asText()));
+        firmwareVersions.add(aggregatedDevices.get(serialNumber).getProperties().get("FirmwareVersion"));
+        aggregatedDevices.get(serialNumber).getProperties().put("AvailableFirmwareVersions", String.join(",", firmwareVersions));
     }
 
     /**
@@ -454,16 +680,31 @@ public class SageVueCommunicator extends RestCommunicator implements Aggregator,
      * @return JsonNode instance containing list of SageVue systems
      */
     private JsonNode getSystems(boolean retryAuthentication) throws Exception {
-        try {
-            String devicesResponse = doGet(BASE_URL + "systems", String.class);
-            return objectMapper.readTree(devicesResponse);
-        } catch (FailedLoginException | CommandFailureException fle){
-            if(retryAuthentication){
-                throw new FailedLoginException("Failed to get list of systems using SessionID: " + loginId);
-            }
-            authenticate();
-            return getSystems(true);
-        }
+//        try {
+           // String devicesResponse = doGet(BASE_URL + "systems", String.class);
+            return objectMapper.readTree("{\"Systems\":[{\"AssetGroupId\":\"4a7a071b-7331-4849-b842-516bae6f395d\",\"IsControlled\":false,\"Devices\":[{\"Model\":\"FORTE_VT\",\"ModelDescription\":\"TesiraFORTÉ AVB VT\",\"SystemDescription\":\"TesiraFORTÉ AVB-VT - Default Configuration 03275657\",\"FirmwareVersion\":\"3.3.0.18\",\"OccupiedStatus\":\"Rebooting\",\"AssetGroupId\":\"4a7a071b-7331-4849-b842-516bae6f395d\",\"IsControlled\":false,\"SystemId\":\"03275657\",\"SerialNumber\":\"03275657\",\"HostName\":\"TesiraForte03275657\",\"Description\":\"\",\"IsProtected\":false,\"Faults\":[{\"FaultId\": \"123\",\"IndicatorId\": \"ERR\",\"Message\": \"Unable to get information\"}, {\"FaultId\": \"456\",\"IndicatorId\": \"ERR2\",\"Message\": \"Unable to fetch information\"}, {\"FaultId\": \"789\",\"IndicatorId\": \"FWER\",\"Message\": \"Firmware error\"}],\"Status\":0,\"Labels\":[]}],\"SystemId\":\"03275657\",\"SerialNumber\":\"03275657\",\"HostName\":\"TesiraForte03275657\",\"Description\":\"TesiraFORTÉ AVB-VT - Default Configuration 03275657\",\"IsProtected\":false,\"Faults\":[{\"FaultId\": \"123\",\"IndicatorId\": \"ERR\",\"Message\": \"Unable to get information\"}, {\"FaultId\": \"456\",\"IndicatorId\": \"ERR2\",\"Message\": \"Unable to fetch information\"}, {\"FaultId\": \"789\",\"IndicatorId\": \"FWER\",\"Message\": \"Firmware error\"}],\"Status\":0,\"Labels\":[]}],\"Errors\":[]}");
+//        } catch (FailedLoginException | CommandFailureException fle){
+//            if(retryAuthentication){
+//                throw new FailedLoginException("Failed to get list of systems using SessionID: " + loginId);
+//            }
+//            authenticate();
+//            return getSystems(true);
+//        }
+    }
+
+    @Override
+    public void setPingAttempts(int pingAttempts) {
+        super.setPingAttempts(pingAttempts);
+    }
+
+    @Override
+    public void setPingTimeout(int pingTimeout) {
+        super.setPingTimeout(pingTimeout);
+    }
+
+    @Override
+    public int ping() throws Exception {
+        return 60;
     }
 
     @Override
