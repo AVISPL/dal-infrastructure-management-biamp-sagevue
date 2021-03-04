@@ -15,24 +15,24 @@ models:
   - model:
       name: Tesira
       vendor: biamp
-      filter: device.Model=='FORTE_VT'
+      filter: get("Model").asText().equals("FORTE_VT")
       properties:
         Reboot: Reboot
-        FirmwareVersion: device.FirmwareVersion
+        FirmwareVersion: get("FirmwareVersion")
         AvailableFirmwareVersions: AvailableFirmwareVersions
         FirmwareUpdate: FirmwareUpdate
-        isControlled: device.IsControlled
-        isProtected: device.IsProtected
-        ipAddress: device.IpAddress
-        occupiedStatus: device.OccupiedStatus || "None"
-        deviceFaults: "var value = \"\";device.Faults.forEach(function (d){value+=(d.FaultId + \"|\" + d.IndicatorId + \":\" + d.Message + \"\\\n\");});value || \"None\""
+        isControlled: get("IsControlled")
+        isProtected: get("IsProtected")
+        ipAddress: get("IpAddress")
+        occupiedStatus: "get(\"OccupiedStatus\").asText().length() == 0 ? \"None\" : get(\"OccupiedStatus\")"
+        deviceFaults: "get(\"Faults\").asText().length() == 0 ? \"None\" : get(\"Faults\")"
       mapping:
         deviceMake: Biamp
         deviceName: TesiraFORTÉ
-        deviceModel: device.ModelDescription
-        deviceId: device.SystemId
-        deviceOnline: device.Status==0
-        serialNumber: device.SerialNumber
+        deviceModel: get("ModelDescription")
+        deviceId: get("SystemId")
+        deviceOnline: get("Status").asText().equals("0")
+        serialNumber: get("SerialNumber")
       control:
         Reboot:
           type: Button
@@ -46,5 +46,6 @@ models:
           gracePeriod: 0
         AvailableFirmwareVersions:
           type: DropDown
-          options: device.AvailableFirmwareVersions
-          labels: device.AvailableFirmwareVersions
+          options: get("AvailableFirmwareVersions")
+          labels: get("AvailableFirmwareVersions")
+          value: get("FirmwareVersion")
