@@ -13,6 +13,19 @@ models:
         deviceOnline: get("Status").asText().equals("0")
         serialNumber: get("SerialNumber")
   - model:
+      name: SageVueBasicDevice
+      vendor: biamp
+      filter: get("Model").asText().equals("FORTE_VT")!=true
+      properties:
+        FirmwareVersion: get("FirmwareVersion")
+        isControlled: get("IsControlled")
+        isProtected: get("IsProtected")
+      mapping:
+        deviceModel: get("ModelDescription")
+        deviceId: get("SystemId")
+        deviceOnline: get("Status").asText().equals("0")
+        serialNumber: get("SerialNumber")
+  - model:
       name: Tesira
       vendor: biamp
       filter: get("Model").asText().equals("FORTE_VT")
