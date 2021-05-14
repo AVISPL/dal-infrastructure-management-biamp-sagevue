@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020 AVI-SPL Inc. All Rights Reserved.
+ * Copyright (c) 2020-2021 AVI-SPL Inc. All Rights Reserved.
  */
 package com.avispl.symphony.dal.communicator.biamp.sagevue;
 
@@ -9,6 +9,7 @@ import com.avispl.symphony.api.dal.dto.control.ControllableProperty;
 import com.avispl.symphony.api.dal.dto.monitor.ExtendedStatistics;
 import com.avispl.symphony.api.dal.dto.monitor.Statistics;
 import com.avispl.symphony.api.dal.dto.monitor.aggregator.AggregatedDevice;
+import com.avispl.symphony.api.dal.error.CommandFailureException;
 import com.avispl.symphony.api.dal.monitor.Monitorable;
 import com.avispl.symphony.api.dal.monitor.aggregator.Aggregator;
 import com.avispl.symphony.dal.aggregator.parser.AggregatedDeviceProcessor;
@@ -24,12 +25,23 @@ import org.springframework.http.*;
 import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
 
+import javax.security.auth.login.FailedLoginException;
 import java.util.*;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 
 import static java.util.Collections.*;
 
+/**
+ * Communicator based on SageVue REST API
+ * It aggregates devices based on /resources/sagevue/model-mapping.yml and populates them as
+ * aggregated devices. For models that are defined explicitly (FORTE_VT), specific mapping is used.
+ * For the rest - basic mapping with generic information (Serial number, firmware version, online status etc.)
+ *
+ * @author Maksym.Rossiitsev / Symphony Dev Team<br>
+ * Created on May 7, 2020
+ * @since 1.0
+ */
 public class SageVueCommunicator extends RestCommunicator implements Aggregator, Monitorable, Controller {
 
     private String loginId;
@@ -54,6 +66,10 @@ public class SageVueCommunicator extends RestCommunicator implements Aggregator,
 
     private static final String BASE_URL = "/biampsagevue/api/";
 
+    /**
+     * Setting ignoring certificates to allow all https connections.
+     * Instantiating ObjectMapper to deserialize response payloads
+     */
     public SageVueCommunicator() {
         super();
         setTrustAllCertificates(true);
@@ -76,14 +92,13 @@ public class SageVueCommunicator extends RestCommunicator implements Aggregator,
      * When the system control is activated - systemId is not present
      * within a ControllableProperty instance, since this is a "native" controllable property.
      * So instead, the systemId is being extracted from the controllable property name.
-     *
+     * <p>
      * Device controllable properties:
      * Reboot - requests a device reboot
      * FirmwareUpdate - requests a device firmware update
      * AvailableFirmwareVersions - this is a dropdown, containing all the options for the firmware update
      * of a particular device model. When the control is triggered for this one - the selected firmware version
      * is put into the map, containing "serialNumber:firmwareVersion" pairs.
-     *
      */
     @Override
     public void controlProperty(ControllableProperty controllableProperty) throws Exception {
@@ -95,7 +110,7 @@ public class SageVueCommunicator extends RestCommunicator implements Aggregator,
             String value = String.valueOf(controllableProperty.getValue());
             String modelName = deviceModels.get(deviceId);
 
-            if(property.startsWith("System")) {
+            if (property.startsWith("System")) {
                 String systemId = property.replaceAll("[^\\d.]", "");
                 switch (value) {
                     case "1":
@@ -108,13 +123,13 @@ public class SageVueCommunicator extends RestCommunicator implements Aggregator,
                         break;
                 }
             } else {
-                switch (property){
+                switch (property) {
                     case "Reboot":
                         reboot(deviceId, modelName);
                         break;
                     case "FirmwareUpdate":
                         String newFirmwareVersion = devicesFirmwareVersions.get(deviceId);
-                        if(StringUtils.isEmpty(newFirmwareVersion)){
+                        if (StringUtils.isEmpty(newFirmwareVersion)) {
                             return;
                         }
                         requestFirmwareUpdate(deviceId, newFirmwareVersion, modelName);
@@ -137,7 +152,7 @@ public class SageVueCommunicator extends RestCommunicator implements Aggregator,
         if (CollectionUtils.isEmpty(controllablePropertyList)) {
             throw new IllegalArgumentException("Controllable properties cannot be null or empty");
         }
-        for(ControllableProperty controllableProperty: controllablePropertyList){
+        for (ControllableProperty controllableProperty : controllablePropertyList) {
             controlProperty(controllableProperty);
         }
     }
@@ -170,7 +185,7 @@ public class SageVueCommunicator extends RestCommunicator implements Aggregator,
         ExtendedStatistics statistics = new ExtendedStatistics();
         List<AdvancedControllableProperty> controls = new ArrayList<>();
         Map<String, String> multipleStatistics = new HashMap<>();
-        ArrayNode systems = (ArrayNode) getSystems().withArray("Systems");
+        ArrayNode systems = (ArrayNode) getSystems(false).withArray("Systems");
 
         systems.forEach(jsonNode -> {
             String systemId = jsonNode.get("SystemId").asText();
@@ -209,11 +224,11 @@ public class SageVueCommunicator extends RestCommunicator implements Aggregator,
      * @param populateCredentials whether or not the authentication credentials has to be used
      * @return Map that contains user credentials - username and password
      */
-    private Map<String, Map<String, String>> buildAuthenticationPayload(boolean populateCredentials){
+    private Map<String, Map<String, String>> buildAuthenticationPayload(boolean populateCredentials) {
         Map<String, Map<String, String>> authenticationBody = new HashMap<>();
         Map<String, String> credentials = new HashMap<>();
 
-        if(populateCredentials){
+        if (populateCredentials) {
             credentials.put("userName", this.getLogin());
             credentials.put("password", this.getPassword());
         } else {
@@ -252,7 +267,7 @@ public class SageVueCommunicator extends RestCommunicator implements Aggregator,
      * @param password new password to use for the SageVue system protect action
      * @return Map containing the payload needed for the SageVue system protect action
      */
-    private Map<String, Map<String, String>> buildNewAdminPasswordPayload(String password){
+    private Map<String, Map<String, String>> buildNewAdminPasswordPayload(String password) {
         Map<String, String> passwordBody = new HashMap<>();
         passwordBody.put("newAdminPassword", password);
 
@@ -269,7 +284,7 @@ public class SageVueCommunicator extends RestCommunicator implements Aggregator,
      * @param password a password to use for the SageVue system unprotect action
      * @return Map containing the payload needed for the SageVue system unprotect action
      */
-    private Map<String, Map<String, String>> buildExistingNewAdminPasswordPayload(String password){
+    private Map<String, Map<String, String>> buildExistingNewAdminPasswordPayload(String password) {
         Map<String, String> passwordBody = new HashMap<>();
         passwordBody.put("existingAdminPassword", password);
 
@@ -285,8 +300,7 @@ public class SageVueCommunicator extends RestCommunicator implements Aggregator,
      * even if the device is not protected.
      *
      * @param deviceSerialNumber serial number of the device to build a firmware update request for
-     * @param firmwareVersion firmware version to use
-     *
+     * @param firmwareVersion    firmware version to use
      * @return Map<String, Object> the request payload, containing the device serial number, firmware version
      * to use and username/password
      */
@@ -319,7 +333,8 @@ public class SageVueCommunicator extends RestCommunicator implements Aggregator,
         try {
 
             deviceModels.clear();
-            devices.addAll(aggregatedDeviceProcessor.extractDevices(getDevices()));
+            JsonNode devicesJson = getDevices(false);
+            devices.addAll(aggregatedDeviceProcessor.extractDevices(devicesJson));
 
             protectedDevices.clear();
             devices.forEach(aggregatedDevice -> {
@@ -342,15 +357,15 @@ public class SageVueCommunicator extends RestCommunicator implements Aggregator,
      * /devices/nexia/{serialNumber}/Reboot
      *
      * @param deviceSerialNumber device serial number
-     * @param deviceModel device model to set a proper endpoint
+     * @param deviceModel        device model to set a proper endpoint
      */
     private void reboot(String deviceSerialNumber, String deviceModel) throws Exception {
         doPut(BASE_URL + "Devices/" + retrieveDeviceUrlSegment(deviceModel) + deviceSerialNumber + "/Reboot",
                 buildAuthenticationPayload(protectedDevices.contains(deviceSerialNumber)), String.class);
     }
 
-    private String retrieveDeviceUrlSegment(String deviceModel){
-        if(deviceModel.toLowerCase().equals("tesira")){
+    private String retrieveDeviceUrlSegment(String deviceModel) {
+        if (deviceModel.toLowerCase().equals("tesira")) {
             return "";
         } else {
             return deviceModel + "/";
@@ -360,14 +375,25 @@ public class SageVueCommunicator extends RestCommunicator implements Aggregator,
     /**
      * Fetch a /devices endpoint to retrieve list of all devices.
      *
+     * @param reAuthenticated true if this is a second attempt of getting the devices data, with the {@link #authenticate()}
+     *                        method issued
      * @return JsonNode instance containing an array of the devices
      */
-    private JsonNode getDevices() throws Exception {
-        authenticate();
-        String devicesResponse = doGet(BASE_URL + "devices", String.class);
-        JsonNode devices = objectMapper.readTree(devicesResponse);
+    private JsonNode getDevices(boolean reAuthenticated) throws Exception {
+        JsonNode devices;
+        try {
+            String devicesResponse = doGet(BASE_URL + "devices", String.class);
+            devices = objectMapper.readTree(devicesResponse);
+        } catch (FailedLoginException | CommandFailureException fle) {
+            if (reAuthenticated) {
+                throw new FailedLoginException("Failed to get list of devices using SessionID: " + loginId);
+            }
+            authenticate();
+            return getDevices(true);
+        }
+
         devices.fieldNames().forEachRemaining(s -> {
-            if(s.endsWith("Devices")){
+            if (s.endsWith("Devices")) {
                 String modelName = s.replaceAll("Devices", "");
                 devices.get(s).forEach(jsonNode -> {
                     String deviceSerialNumber = jsonNode.findValue("SerialNumber").asText();
@@ -384,6 +410,16 @@ public class SageVueCommunicator extends RestCommunicator implements Aggregator,
 
                     firmwareVersionsResponse.forEach(firmwareVersion -> firmwareVersions.add(firmwareVersion.get("Version").asText()));
                     ((ObjectNode) jsonNode).put("AvailableFirmwareVersions", String.join(",", firmwareVersions));
+
+                    ArrayNode deviceFaults = (ArrayNode) jsonNode.get("Faults");
+                    if (deviceFaults.size() > 0) {
+                        StringBuilder faultsStringBuilder = new StringBuilder();
+                        deviceFaults.forEach(fault -> {
+                            faultsStringBuilder.append(fault.get("FaultId").asText()).append("|")
+                                    .append(fault.get("IndicatorId").asText()).append(":").append(fault.get("Message").asText()).append("\n");
+                        });
+                        ((ObjectNode) jsonNode).put("Faults", faultsStringBuilder.toString());
+                    }
                 });
             }
         });
@@ -393,9 +429,8 @@ public class SageVueCommunicator extends RestCommunicator implements Aggregator,
     /**
      * Get information about a particular device based on it's deviceId and deviceModel
      *
-     * @param deviceId id of the device
+     * @param deviceId    id of the device
      * @param deviceModel
-     *
      * @return JsonNode instance that represents the device
      */
     private JsonNode getDevice(String deviceId, String deviceModel) {
@@ -429,12 +464,21 @@ public class SageVueCommunicator extends RestCommunicator implements Aggregator,
     /**
      * Get SageVue systems
      *
+     * @param reAuthenticated true if this is a second attempt of getting the devices data, with the {@link #authenticate()}
+     *                        method issued
      * @return JsonNode instance containing list of SageVue systems
      */
-    private JsonNode getSystems() throws Exception {
-        authenticate();
-        String devicesResponse = doGet(BASE_URL + "systems", String.class);
-        return objectMapper.readTree(devicesResponse);
+    private JsonNode getSystems(boolean reAuthenticated) throws Exception {
+        try {
+            String devicesResponse = doGet(BASE_URL + "systems", String.class);
+            return objectMapper.readTree(devicesResponse);
+        } catch (FailedLoginException | CommandFailureException fle) {
+            if (reAuthenticated) {
+                throw new FailedLoginException("Failed to get list of systems using SessionID: " + loginId);
+            }
+            authenticate();
+            return getSystems(true);
+        }
     }
 
     @Override
@@ -448,14 +492,14 @@ public class SageVueCommunicator extends RestCommunicator implements Aggregator,
      * Create a request for a SageVue device firmware update.
      *
      * @param deviceSerialNumber a serial number of the device for which to request a firmware update action
-     * @param firmwareVersion firmware version that should be used
-     * @param deviceModel to create a correct request url: tesira devices require using a default url: /firmware/
-     *                    whereas other devices request model to be specified explicitly: /firmware/{deviceModel}
+     * @param firmwareVersion    firmware version that should be used
+     * @param deviceModel        to create a correct request url: tesira devices require using a default url: /firmware/
+     *                           whereas other devices request model to be specified explicitly: /firmware/{deviceModel}
      */
     private void requestFirmwareUpdate(String deviceSerialNumber, String firmwareVersion, String deviceModel) throws Exception {
         devicesFirmwareVersions.remove(deviceSerialNumber);
         String response = doPut(BASE_URL + "Firmware/" + retrieveDeviceUrlSegment(deviceModel), buildFirmwareUpdateRequest(deviceSerialNumber, firmwareVersion), String.class);
-        if(logger.isDebugEnabled()) {
+        if (logger.isDebugEnabled()) {
             logger.trace("SageVue: Firmware update result: " + response + " for device " + deviceModel + deviceSerialNumber);
         }
     }
