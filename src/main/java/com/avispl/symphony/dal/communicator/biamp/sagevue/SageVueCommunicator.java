@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020 AVI-SPL Inc. All Rights Reserved.
+ * Copyright (c) 2020-2021 AVI-SPL Inc. All Rights Reserved.
  */
 package com.avispl.symphony.dal.communicator.biamp.sagevue;
 
@@ -32,6 +32,16 @@ import java.util.stream.Collectors;
 
 import static java.util.Collections.*;
 
+/**
+ * Communicator based on SageVue REST API
+ * It aggregates devices based on /resources/sagevue/model-mapping.yml and populates them as
+ * aggregated devices. For models that are defined explicitly (FORTE_VT), specific mapping is used.
+ * For the rest - basic mapping with generic information (Serial number, firmware version, online status etc.)
+ *
+ * @author Maksym.Rossiitsev / Symphony Dev Team<br>
+ * Created on May 7, 2020
+ * @since 1.0
+ */
 public class SageVueCommunicator extends RestCommunicator implements Aggregator, Monitorable, Controller {
 
     private String loginId;
@@ -56,6 +66,10 @@ public class SageVueCommunicator extends RestCommunicator implements Aggregator,
 
     private static final String BASE_URL = "/biampsagevue/api/";
 
+    /**
+     * Setting ignoring certificates to allow all https connections.
+     * Instantiating ObjectMapper to deserialize response payloads
+     */
     public SageVueCommunicator() {
         super();
         setTrustAllCertificates(true);
