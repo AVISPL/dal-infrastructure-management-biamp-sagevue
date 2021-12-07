@@ -4,14 +4,89 @@ models:
       node: TesiraDevices
       vendor: biamp
       properties:
-        FirmwareVersion: FirmwareVersion
-        isControlled: IsControlled
-        isProtected: IsProtected
+        FirmwareVersion: get("FirmwareVersion")
+        isControlled: get("IsControlled")
+        isProtected: get("IsProtected")
       mapping:
-        deviceModel: ModelDescription
-        deviceId: SystemId
-        deviceOnline: Status
-        serialNumber: SerialNumber
+        deviceModel: get("ModelDescription")
+        deviceName: get("ModelDescription")
+        deviceId: get("SystemId")
+        deviceOnline: get("Status").asText().equals("0")
+        serialNumber: get("SerialNumber")
+  - model:
+      name: Atom
+      node: AtomDevices
+      filter: true
+      vendor: biamp
+      properties:
+        FirmwareVersion: get("FirmwareVersion")
+        isControlled: get("IsControlled")
+        isProtected: get("IsProtected")
+      mapping:
+        deviceModel: get("ModelDescription")
+        deviceName: get("ModelDescription")
+        deviceId: get("SystemId")
+        deviceOnline: get("Status").asText().equals("0")
+        serialNumber: get("SerialNumber")
+  - model:
+      name: Dynasound
+      node: DynasoundDevices
+      filter: true
+      vendor: biamp
+      properties:
+        FirmwareVersion: get("FirmwareVersion")
+        isControlled: get("IsControlled")
+        isProtected: get("IsProtected")
+      mapping:
+        deviceModel: get("ModelDescription")
+        deviceName: get("ModelDescription")
+        deviceId: get("SystemId")
+        deviceOnline: get("Status").asText().equals("0")
+        serialNumber: get("SerialNumber")
+  - model:
+      name: QtPro
+      node: QtProDevices
+      filter: true
+      vendor: biamp
+      properties:
+        FirmwareVersion: get("FirmwareVersion")
+        isControlled: get("IsControlled")
+        isProtected: get("IsProtected")
+      mapping:
+        deviceModel: get("ModelDescription")
+        deviceName: get("ModelDescription")
+        deviceId: get("SystemId")
+        deviceOnline: get("Status").asText().equals("0")
+        serialNumber: get("SerialNumber")
+  - model:
+      name: Devio
+      node: DevioDevices
+      filter: true
+      vendor: biamp
+      properties:
+        FirmwareVersion: get("FirmwareVersion")
+        isControlled: get("IsControlled")
+        isProtected: get("IsProtected")
+      mapping:
+        deviceModel: get("ModelDescription")
+        deviceName: get("ModelDescription")
+        deviceId: get("SystemId")
+        deviceOnline: get("Status").asText().equals("0")
+        serialNumber: get("SerialNumber")
+  - model:
+      name: SageVueBasicDevice
+      vendor: biamp
+      filter: get("Model").asText().equals("FORTE_VT")!=true
+      properties:
+        FirmwareVersion: get("FirmwareVersion")
+        isControlled: get("IsControlled")
+        isProtected: get("IsProtected")
+      mapping:
+        deviceModel: get("ModelDescription")
+        deviceName: get("ModelDescription")
+        deviceId: get("SystemId")
+        deviceOnline: get("Status").asText().equals("0")
+        serialNumber: get("SerialNumber")
   - model:
       name: Tesira
       vendor: biamp
@@ -28,7 +103,7 @@ models:
         deviceFaults: "get(\"Faults\").asText().length() == 0 ? \"None\" : get(\"Faults\")"
       mapping:
         deviceMake: Biamp
-        deviceName: TesiraFORTÉ
+        deviceName: get("ModelDescription")
         deviceModel: get("ModelDescription")
         deviceId: get("SystemId")
         deviceOnline: get("Status").asText().equals("0")
