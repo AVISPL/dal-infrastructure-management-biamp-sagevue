@@ -53,7 +53,7 @@ jobs:
     - name: PMD check
       run: mvn pmd:check
     - id: getfilename
-      run: echo "::set-output name=file::$(ls target/symphony-dal-communicator-biamp-sagevue-${{ needs.versiongenerate.outputs.version }}.jar)"
+      run: echo "::set-output name=file::$(ls target/symphony-dal-infrastructure-management-biamp-sagevue-${{ needs.versiongenerate.outputs.version }}.jar)"
     - uses: actions/upload-artifact@v2
       with:
         name: SageVue
