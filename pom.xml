@@ -5,7 +5,7 @@
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>com.avispl.symphony.dal.device.biamp.sagevue</groupId>
-    <artifactId>symphony-dal-communicator-biamp-sagevue</artifactId>
+    <artifactId>symphony-dal-infrastructure-management-biamp-sagevue</artifactId>
     <version>1.0.6</version>
     <properties>
         <symphonyApiVersion>RELEASE</symphonyApiVersion>
