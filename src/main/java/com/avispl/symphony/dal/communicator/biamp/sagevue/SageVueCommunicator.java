@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021 AVI-SPL Inc. All Rights Reserved.
+ * Copyright (c) 2020-2024 AVI-SPL Inc. All Rights Reserved.
  */
 package com.avispl.symphony.dal.communicator.biamp.sagevue;
 
@@ -58,11 +58,9 @@ public class SageVueCommunicator extends RestCommunicator implements Aggregator,
      * Container for "deviceId:deviceModel" pairs to use the correct API endpoint during control actions
      */
     private Map<String, String> deviceModels = new HashMap<>();
-    /**
-     *
-     * */
     private final ReentrantLock lock = new ReentrantLock();
     /**
+     * device properties processor for json data extraction, using yml mapping
      * */
     private AggregatedDeviceProcessor aggregatedDeviceProcessor;
     /**
