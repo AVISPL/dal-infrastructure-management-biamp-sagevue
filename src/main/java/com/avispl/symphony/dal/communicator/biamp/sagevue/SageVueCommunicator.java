@@ -26,6 +26,7 @@ import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
 
 import javax.security.auth.login.FailedLoginException;
+import java.io.IOException;
 import java.util.*;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
@@ -43,15 +44,12 @@ import static java.util.Collections.*;
  * @since 1.0
  */
 public class SageVueCommunicator extends RestCommunicator implements Aggregator, Monitorable, Controller {
-
     private String loginId;
     private ObjectMapper objectMapper;
-
     /**
      * List of protected devices within an aggregator to use during control operations
      */
     private List<String> protectedDevices = new ArrayList<>();
-
     /**
      * Container for the firmware versions selected for an update each device in aggregator.
      */
@@ -60,9 +58,21 @@ public class SageVueCommunicator extends RestCommunicator implements Aggregator,
      * Container for "deviceId:deviceModel" pairs to use the correct API endpoint during control actions
      */
     private Map<String, String> deviceModels = new HashMap<>();
-
+    /**
+     *
+     * */
     private final ReentrantLock lock = new ReentrantLock();
+    /**
+     * */
     private AggregatedDeviceProcessor aggregatedDeviceProcessor;
+    /**
+     * Adapter metadata, collected from the version.properties
+     */
+    private Properties adapterProperties;
+    /**
+     * Device adapter instantiation timestamp.
+     */
+    private long adapterInitializationTimestamp;
 
     private static final String BASE_URL = "/biampsagevue/api/";
 
@@ -70,9 +80,11 @@ public class SageVueCommunicator extends RestCommunicator implements Aggregator,
      * Setting ignoring certificates to allow all https connections.
      * Instantiating ObjectMapper to deserialize response payloads
      */
-    public SageVueCommunicator() {
+    public SageVueCommunicator() throws IOException {
         super();
         setTrustAllCertificates(true);
+        adapterProperties = new Properties();
+        adapterProperties.load(getClass().getResourceAsStream("/version.properties"));
         objectMapper = new ObjectMapper();
     }
 
@@ -82,9 +94,10 @@ public class SageVueCommunicator extends RestCommunicator implements Aggregator,
      */
     @Override
     protected void internalInit() throws Exception {
-        super.internalInit();
+        adapterInitializationTimestamp = System.currentTimeMillis();
         Map<String, PropertiesMapping> mapping = new PropertiesMappingParser().loadYML("sagevue/model-mapping.yml", getClass());
         aggregatedDeviceProcessor = new AggregatedDeviceProcessor(mapping);
+        super.internalInit();
     }
 
     /**
@@ -185,11 +198,11 @@ public class SageVueCommunicator extends RestCommunicator implements Aggregator,
         ExtendedStatistics statistics = new ExtendedStatistics();
         List<AdvancedControllableProperty> controls = new ArrayList<>();
         Map<String, String> multipleStatistics = new HashMap<>();
-        ArrayNode systems = (ArrayNode) getSystems(false).withArray("Systems");
+        ArrayNode systems = getSystems(false).withArray("Systems");
 
         systems.forEach(jsonNode -> {
-            String systemId = jsonNode.get("SystemId").asText();
-            boolean isProtected = jsonNode.get("IsProtected").asBoolean();
+            String systemId = jsonNode.at("/SystemId").asText();
+            boolean isProtected = jsonNode.at("/IsProtected").asBoolean();
 
             AdvancedControllableProperty.Switch protectSystemSwitch = new AdvancedControllableProperty.Switch();
             protectSystemSwitch.setLabelOff("Unprotect");
@@ -202,6 +215,10 @@ public class SageVueCommunicator extends RestCommunicator implements Aggregator,
             controls.add(protectSystemControl);
         });
 
+        multipleStatistics.put("AdapterVersion", adapterProperties.getProperty("aggregator.version"));
+        multipleStatistics.put("AdapterBuildDate", adapterProperties.getProperty("aggregator.build.date"));
+        multipleStatistics.put("AdapterUptime", normalizeUptime((System.currentTimeMillis() - adapterInitializationTimestamp) / 1000));
+
         statistics.setStatistics(multipleStatistics);
         statistics.setControllableProperties(controls);
         return singletonList(statistics);
@@ -213,7 +230,7 @@ public class SageVueCommunicator extends RestCommunicator implements Aggregator,
     @Override
     protected void authenticate() throws Exception {
         JsonNode authentication = objectMapper.readTree(doPost(BASE_URL + "login", buildAuthenticationPayload(true), String.class));
-        loginId = authentication.get("LoginId").asText();
+        loginId = authentication.at("/LoginId").asText();
     }
 
     /**
@@ -247,7 +264,7 @@ public class SageVueCommunicator extends RestCommunicator implements Aggregator,
      */
     private boolean protectSystem(String systemId) throws Exception {
         String response = doPut(BASE_URL + "Systems/" + systemId + "/protect", buildNewAdminPasswordPayload(systemId), String.class);
-        return objectMapper.readTree(response).findValue("Protected").booleanValue();
+        return objectMapper.readTree(response).at("/Protected").booleanValue();
     }
 
     /**
@@ -258,7 +275,7 @@ public class SageVueCommunicator extends RestCommunicator implements Aggregator,
      */
     private boolean unprotectSystem(String systemId) throws Exception {
         String response = doPut(BASE_URL + "Systems/" + systemId + "/unprotect", buildExistingNewAdminPasswordPayload(systemId), String.class);
-        return objectMapper.readTree(response).findValue("Unprotected").booleanValue();
+        return objectMapper.readTree(response).at("/Unprotected").booleanValue();
     }
 
     /**
@@ -396,27 +413,27 @@ public class SageVueCommunicator extends RestCommunicator implements Aggregator,
             if (s.endsWith("Devices")) {
                 String modelName = s.replaceAll("Devices", "");
                 devices.get(s).forEach(jsonNode -> {
-                    String deviceSerialNumber = jsonNode.findValue("SerialNumber").asText();
+                    String deviceSerialNumber = jsonNode.at("/SerialNumber").asText();
                     JsonNode device = getDevice(deviceSerialNumber, modelName);
                     ArrayNode firmwareVersionsResponse = getFirmwareVersions(modelName);
 
                     deviceModels.put(deviceSerialNumber, modelName);
                     if (device != null) {
-                        ((ObjectNode) jsonNode).put("IpAddress", device.findValue("IpAddress").asText());
+                        ((ObjectNode) jsonNode).put("IpAddress", device.at("/IpAddress").asText());
                     }
 
                     Set<String> firmwareVersions = new HashSet<>();
-                    firmwareVersions.add(jsonNode.findValue("FirmwareVersion").asText());
+                    firmwareVersions.add(jsonNode.at("/FirmwareVersion").asText());
 
-                    firmwareVersionsResponse.forEach(firmwareVersion -> firmwareVersions.add(firmwareVersion.get("Version").asText()));
+                    firmwareVersionsResponse.forEach(firmwareVersion -> firmwareVersions.add(firmwareVersion.at("/Version").asText()));
                     ((ObjectNode) jsonNode).put("AvailableFirmwareVersions", String.join(",", firmwareVersions));
 
-                    ArrayNode deviceFaults = (ArrayNode) jsonNode.get("Faults");
+                    ArrayNode deviceFaults = (ArrayNode) jsonNode.at("/Faults");
                     if (deviceFaults.size() > 0) {
                         StringBuilder faultsStringBuilder = new StringBuilder();
                         deviceFaults.forEach(fault -> {
-                            faultsStringBuilder.append(fault.get("FaultId").asText()).append("|")
-                                    .append(fault.get("IndicatorId").asText()).append(":").append(fault.get("Message").asText()).append("\n");
+                            faultsStringBuilder.append(fault.at("/FaultId").asText()).append("|")
+                                    .append(fault.at("/IndicatorId").asText()).append(":").append(fault.at("/Message").asText()).append("\n");
                         });
                         ((ObjectNode) jsonNode).put("Faults", faultsStringBuilder.toString());
                     }
@@ -437,7 +454,7 @@ public class SageVueCommunicator extends RestCommunicator implements Aggregator,
         JsonNode device = null;
         try {
             String deviceResponse = doGet(BASE_URL + "devices/" + retrieveDeviceUrlSegment(deviceModel) + deviceId, String.class);
-            device = objectMapper.readTree(deviceResponse).get("Device");
+            device = objectMapper.readTree(deviceResponse).at("/Device");
         } catch (Exception e) {
             logger.error("Unable to find a device with id " + deviceId);
         }
@@ -504,4 +521,35 @@ public class SageVueCommunicator extends RestCommunicator implements Aggregator,
         }
     }
 
+    /**
+     * Uptime is received in seconds, need to normalize it and make it human readable, like
+     * 1 day(s) 5 hour(s) 12 minute(s) 55 minute(s)
+     * Incoming parameter is may have a decimal point, so in order to safely process this - it's rounded first.
+     * We don't need to add a segment of time if it's 0.
+     *
+     * @param uptimeSeconds value in seconds
+     * @return string value of format 'x day(s) x hour(s) x minute(s) x minute(s)'
+     */
+    private String normalizeUptime(long uptimeSeconds) {
+        StringBuilder normalizedUptime = new StringBuilder();
+
+        long seconds = uptimeSeconds % 60;
+        long minutes = uptimeSeconds % 3600 / 60;
+        long hours = uptimeSeconds % 86400 / 3600;
+        long days = uptimeSeconds / 86400;
+
+        if (days > 0) {
+            normalizedUptime.append(days).append(" day(s) ");
+        }
+        if (hours > 0) {
+            normalizedUptime.append(hours).append(" hour(s) ");
+        }
+        if (minutes > 0) {
+            normalizedUptime.append(minutes).append(" minute(s) ");
+        }
+        if (seconds > 0) {
+            normalizedUptime.append(seconds).append(" second(s)");
+        }
+        return normalizedUptime.toString().trim();
+    }
 }
