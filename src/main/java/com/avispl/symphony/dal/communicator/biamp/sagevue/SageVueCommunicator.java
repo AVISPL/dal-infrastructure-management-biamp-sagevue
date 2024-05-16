@@ -426,7 +426,7 @@ public class SageVueCommunicator extends RestCommunicator implements Aggregator,
                     firmwareVersionsResponse.forEach(firmwareVersion -> firmwareVersions.add(firmwareVersion.at("/Version").asText()));
                     ((ObjectNode) jsonNode).put("AvailableFirmwareVersions", String.join(",", firmwareVersions));
 
-                    ArrayNode deviceFaults = (ArrayNode) jsonNode.at("/Faults");
+                    ArrayNode deviceFaults = jsonNode.withArray("Faults");
                     if (deviceFaults.size() > 0) {
                         StringBuilder faultsStringBuilder = new StringBuilder();
                         deviceFaults.forEach(fault -> {
@@ -469,7 +469,7 @@ public class SageVueCommunicator extends RestCommunicator implements Aggregator,
         ArrayNode versions = JsonNodeFactory.instance.arrayNode();
         try {
             String firmwareUpdateVersions = doGet(BASE_URL + "firmware/" + retrieveDeviceUrlSegment(deviceModel), String.class);
-            versions = (ArrayNode) objectMapper.readTree(firmwareUpdateVersions).withArray("FirmwareUpdates");
+            versions = objectMapper.readTree(firmwareUpdateVersions).withArray("FirmwareUpdates");
         } catch (Exception e) {
             logger.error("Unable to find a firmware versions for model: " + deviceModel);
         }
