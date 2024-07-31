@@ -4,110 +4,110 @@ models:
       node: TesiraDevices
       vendor: biamp
       properties:
-        FirmwareVersion: get("FirmwareVersion")
-        isControlled: get("IsControlled")
-        isProtected: get("IsProtected")
+        FirmwareVersion: at("/FirmwareVersion")
+        isControlled: at("/IsControlled")
+        isProtected: at("/IsProtected")
       mapping:
-        deviceModel: get("ModelDescription")
-        deviceName: get("ModelDescription")
-        deviceId: get("SystemId")
-        deviceOnline: get("Status").asText().equals("0")
-        serialNumber: get("SerialNumber")
+        deviceModel: at("/ModelDescription")
+        deviceName: at("/ModelDescription")
+        deviceId: at("/SystemId")
+        deviceOnline: at("/Status")?.asText().equals("0")
+        serialNumber: get("/SerialNumber")
   - model:
       name: Atom
       node: AtomDevices
       filter: true
       vendor: biamp
       properties:
-        FirmwareVersion: get("FirmwareVersion")
-        isControlled: get("IsControlled")
-        isProtected: get("IsProtected")
+        FirmwareVersion: at("/FirmwareVersion")
+        isControlled: at("/IsControlled")
+        isProtected: at("/IsProtected")
       mapping:
-        deviceModel: get("ModelDescription")
-        deviceName: get("ModelDescription")
-        deviceId: get("SystemId")
-        deviceOnline: get("Status").asText().equals("0")
-        serialNumber: get("SerialNumber")
+        deviceModel: at("/ModelDescription")
+        deviceName: at("/ModelDescription")
+        deviceId: at("/SystemId")
+        deviceOnline: at("/Status")?.asText().equals("0")
+        serialNumber: at("/SerialNumber")
   - model:
       name: Dynasound
       node: DynasoundDevices
       filter: true
       vendor: biamp
       properties:
-        FirmwareVersion: get("FirmwareVersion")
-        isControlled: get("IsControlled")
-        isProtected: get("IsProtected")
+        FirmwareVersion: at("/FirmwareVersion")
+        isControlled: at("/IsControlled")
+        isProtected: at("/IsProtected")
       mapping:
-        deviceModel: get("ModelDescription")
-        deviceName: get("ModelDescription")
-        deviceId: get("SystemId")
-        deviceOnline: get("Status").asText().equals("0")
-        serialNumber: get("SerialNumber")
+        deviceModel: at("/ModelDescription")
+        deviceName: at("/ModelDescription")
+        deviceId: at("/SystemId")
+        deviceOnline: at("/Status")?.asText().equals("0")
+        serialNumber: at("/SerialNumber")
   - model:
       name: QtPro
       node: QtProDevices
       filter: true
       vendor: biamp
       properties:
-        FirmwareVersion: get("FirmwareVersion")
-        isControlled: get("IsControlled")
-        isProtected: get("IsProtected")
+        FirmwareVersion: at("/FirmwareVersion")
+        isControlled: at("/IsControlled")
+        isProtected: at("/IsProtected")
       mapping:
-        deviceModel: get("ModelDescription")
-        deviceName: get("ModelDescription")
-        deviceId: get("SystemId")
-        deviceOnline: get("Status").asText().equals("0")
-        serialNumber: get("SerialNumber")
+        deviceModel: at("/ModelDescription")
+        deviceName: at("/ModelDescription")
+        deviceId: at("/SystemId")
+        deviceOnline: at("/Status")?.asText().equals("0")
+        serialNumber: at("/SerialNumber")
   - model:
       name: Devio
       node: DevioDevices
       filter: true
       vendor: biamp
       properties:
-        FirmwareVersion: get("FirmwareVersion")
-        isControlled: get("IsControlled")
-        isProtected: get("IsProtected")
+        FirmwareVersion: at("/FirmwareVersion")
+        isControlled: at("/IsControlled")
+        isProtected: at("/IsProtected")
       mapping:
-        deviceModel: get("ModelDescription")
-        deviceName: get("ModelDescription")
-        deviceId: get("SystemId")
-        deviceOnline: get("Status").asText().equals("0")
-        serialNumber: get("SerialNumber")
+        deviceModel: at("/ModelDescription")
+        deviceName: at("/ModelDescription")
+        deviceId: at("/SystemId")
+        deviceOnline: at("/Status")?.asText().equals("0")
+        serialNumber: at("/SerialNumber")
   - model:
       name: SageVueBasicDevice
       vendor: biamp
-      filter: get("Model").asText().equals("FORTE_VT")!=true
+      filter: at("/Model")?.asText().equals("FORTE_VT")!=true
       properties:
-        FirmwareVersion: get("FirmwareVersion")
-        isControlled: get("IsControlled")
-        isProtected: get("IsProtected")
+        FirmwareVersion: at("/FirmwareVersion")
+        isControlled: at("/IsControlled")
+        isProtected: at("/IsProtected")
       mapping:
-        deviceModel: get("ModelDescription")
-        deviceName: get("ModelDescription")
-        deviceId: get("SystemId")
-        deviceOnline: get("Status").asText().equals("0")
-        serialNumber: get("SerialNumber")
+        deviceModel: at("/ModelDescription")
+        deviceName: at("/ModelDescription")
+        deviceId: at("/SystemId")
+        deviceOnline: at("/Status")?.asText().equals("0")
+        serialNumber: at("/SerialNumber")
   - model:
       name: Tesira
       vendor: biamp
-      filter: get("Model").asText().equals("FORTE_VT")
+      filter: at("/Model")?.asText().equals("FORTE_VT")
       properties:
         Reboot: Reboot
-        FirmwareVersion: get("FirmwareVersion")
+        FirmwareVersion: at("/FirmwareVersion")
         AvailableFirmwareVersions: AvailableFirmwareVersions
         FirmwareUpdate: FirmwareUpdate
-        isControlled: get("IsControlled")
-        isProtected: get("IsProtected")
-        ipAddress: get("IpAddress")
-        occupiedStatus: "get(\"OccupiedStatus\").asText().length() == 0 ? \"None\" : get(\"OccupiedStatus\")"
-        deviceFaults: "get(\"Faults\").asText().length() == 0 ? \"None\" : get(\"Faults\")"
+        isControlled: at("/IsControlled")
+        isProtected: at("/IsProtected")
+        ipAddress: at("/IpAddress")
+        occupiedStatus: "at(\"/OccupiedStatus\")?.asText().length() == 0 ? \"None\" : at(\"/OccupiedStatus\")"
+        deviceFaults: "at(\"/Faults\")?.asText().length() == 0 ? \"None\" : at(\"/Faults\")"
       mapping:
         deviceMake: Biamp
-        deviceName: get("ModelDescription")
-        deviceModel: get("ModelDescription")
-        deviceId: get("SystemId")
-        deviceOnline: get("Status").asText().equals("0")
-        serialNumber: get("SerialNumber")
+        deviceName: at("/ModelDescription")
+        deviceModel: at("/ModelDescription")
+        deviceId: at("/SystemId")
+        deviceOnline: at("/Status")?.asText().equals("0")
+        serialNumber: at("/SerialNumber")
       control:
         Reboot:
           type: Button
@@ -121,6 +121,6 @@ models:
           gracePeriod: 0
         AvailableFirmwareVersions:
           type: DropDown
-          options: get("AvailableFirmwareVersions")
-          labels: get("AvailableFirmwareVersions")
-          value: get("FirmwareVersion")
+          options: at("/AvailableFirmwareVersions")
+          labels: at("/AvailableFirmwareVersions")
+          value: at("/FirmwareVersion")
